@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+android/app/build
+android/.gradle
+*.local
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+coverage
+.DS_Store
