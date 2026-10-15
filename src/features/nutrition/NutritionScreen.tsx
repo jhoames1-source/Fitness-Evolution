@@ -9,14 +9,25 @@ import {
   DetectedFoodComponent,
   recalculatePlateNutrients,
 } from '../../domain/nutrition/photo-analysis';
-import type { FoodLogRecord } from '../../data/local/schema';
-import type { MealSlot } from '../../domain/nutrition/types';
+import {
+  recognizeAndEstimateFood,
+  FoodEstimateResult,
+} from '../../domain/nutrition/ai-food-recognizer';
+import type { CustomFoodRecord, FoodLogRecord } from '../../data/local/schema';
+import {
+  Food,
+  FoodCategory,
+  FOOD_CATEGORY_LABELS,
+  MealSlot,
+  MEAL_SLOT_LABELS,
+} from '../../domain/nutrition/types';
 
 export const NutritionScreen: React.FC = () => {
   const { profile, goal, db } = useApp();
   const todayStr = new Date().toISOString().slice(0, 10);
 
   const [foodLogs, setFoodLogs] = useState<FoodLogRecord[]>([]);
+  const [customFoods, setCustomFoods] = useState<CustomFoodRecord[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<MealSlot>('lunch');
   const [selectedFoodId, setSelectedFoodId] = useState(FOODS[0]!.id);
@@ -25,7 +36,29 @@ export const NutritionScreen: React.FC = () => {
   const [catalogCategory, setCatalogCategory] = useState<
     'all' | 'popular' | 'protein' | 'carbs' | 'vegetables' | 'dairy' | 'cajamarca'
   >('popular');
-  const [activeTab, setActiveTab] = useState<'today' | 'weekly_plan' | 'sierra_catalog'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'weekly_plan' | 'sierra_catalog' | 'custom_foods'>('today');
+
+  // Estados para creación y reconocimiento de alimentos con IA
+  const [isAiFoodModalOpen, setIsAiFoodModalOpen] = useState(false);
+  const [aiFoodQuery, setAiFoodQuery] = useState('');
+  const [isAiAnalyzingFood, setIsAiAnalyzingFood] = useState(false);
+  const [aiEstimate, setAiEstimate] = useState<FoodEstimateResult | null>(null);
+  const [aiFoodSuccessMsg, setAiFoodSuccessMsg] = useState<string | null>(null);
+
+  // Formulario del nuevo alimento reconocido por IA (editable)
+  const [formName, setFormName] = useState('');
+  const [formCategory, setFormCategory] = useState<FoodCategory>('dishes');
+  const [formUnit, setFormUnit] = useState<'g' | 'ml'>('g');
+  const [formServingLabel, setFormServingLabel] = useState('1 porción (100g)');
+  const [formServingAmount, setFormServingAmount] = useState('100');
+  const [formKcal, setFormKcal] = useState('150');
+  const [formProteinG, setFormProteinG] = useState('10');
+  const [formCarbsG, setFormCarbsG] = useState('15');
+  const [formFatG, setFormFatG] = useState('5');
+  const [formFiberG, setFormFiberG] = useState('2');
+  const [formNotes, setFormNotes] = useState('');
+  const [formAlsoLogToday, setFormAlsoLogToday] = useState(false);
+  const [formLogSlot, setFormLogSlot] = useState<MealSlot>('lunch');
 
   // Estados para subida y análisis con IA de foto del plato de comida
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
@@ -49,8 +82,33 @@ export const NutritionScreen: React.FC = () => {
     setFoodLogs(logs.filter((x) => !x.deletedAt));
   };
 
+  const loadCustomFoods = async () => {
+    if (!profile) return;
+    const list = await db.customFoods.toArray();
+    setCustomFoods(list.filter((x) => !x.deletedAt));
+  };
+
+  // Catálogo unificado: Alimentos base + Alimentos personalizados creados por IA por el usuario
+  const allFoods: Food[] = useMemo(() => {
+    const customAsFoods: Food[] = customFoods.map((cf) => ({
+      id: cf.id,
+      name: cf.name,
+      category: (cf.category as FoodCategory) || 'dishes',
+      unit: cf.unit || 'g',
+      per100: cf.per100,
+      servings: cf.servings?.length
+        ? cf.servings
+        : [{ label: `1 porción (${cf.unit || 'g'})`, amount: 100 }],
+      source: (cf.source as any) || 'estimado',
+      tags: ['usuario', 'ia_custom', ...(cf.tags || [])],
+      notes: cf.notes,
+    }));
+    return [...customAsFoods, ...FOODS];
+  }, [customFoods]);
+
   useEffect(() => {
     loadLogs();
+    loadCustomFoods();
 
     if (goal) {
       const menu = generateWeeklyMenu({
@@ -58,15 +116,15 @@ export const NutritionScreen: React.FC = () => {
         targetProteinG: goal.proteinG,
         targetCarbsG: goal.carbsG,
         targetFatG: goal.fatG,
-        availableFoods: FOODS,
+        availableFoods: allFoods.length > 0 ? allFoods : FOODS,
       });
       setWeeklyMenu(menu);
     }
-  }, [profile, goal, db]);
+  }, [profile, goal, db, customFoods.length]);
 
   const handleSaveMeal = async () => {
     if (!profile) return;
-    const food = FOODS.find((f) => f.id === selectedFoodId);
+    const food = allFoods.find((f) => f.id === selectedFoodId);
     if (!food) return;
 
     const amt = parseFloat(amountInput);
@@ -148,7 +206,7 @@ export const NutritionScreen: React.FC = () => {
   // Añadir un componente manual adicional al plato
   const handleAddExtraComponent = () => {
     if (!photoAnalysisResult) return;
-    const food = FOODS.find((f) => f.id === extraFoodId) || FOODS[0]!;
+    const food = allFoods.find((f) => f.id === extraFoodId) || allFoods[0] || FOODS[0]!;
     const grams = parseFloat(extraFoodGrams) || 100;
     const factor = grams / 100;
     const newComp: DetectedFoodComponent = {
@@ -207,7 +265,136 @@ export const NutritionScreen: React.FC = () => {
     }, 1800);
   };
 
-  const selectedFood = FOODS.find((f) => f.id === selectedFoodId) ?? FOODS[0]!;
+  // Ejecutar reconocimiento y estimación automática de macros con IA
+  const handleRunAiFoodRecognition = (overrideQuery?: string) => {
+    const q = (overrideQuery ?? aiFoodQuery).trim();
+    if (!q) return;
+    setIsAiAnalyzingFood(true);
+
+    setTimeout(() => {
+      const estimate = recognizeAndEstimateFood(q);
+      setAiEstimate(estimate);
+      setFormName(estimate.name);
+      setFormCategory(estimate.category);
+      setFormUnit(estimate.unit);
+      setFormServingLabel(estimate.defaultServingLabel);
+      setFormServingAmount(String(estimate.defaultServingAmount));
+      setFormKcal(String(estimate.per100.kcal));
+      setFormProteinG(String(estimate.per100.proteinG));
+      setFormCarbsG(String(estimate.per100.carbsG));
+      setFormFatG(String(estimate.per100.fatG));
+      setFormFiberG(String(estimate.per100.fiberG));
+      setFormNotes(estimate.notes);
+      setIsAiAnalyzingFood(false);
+    }, 450);
+  };
+
+  // Abrir modal de IA prellenando texto si viene del buscador
+  const handleOpenAiFoodModalWithQuery = (prefill?: string) => {
+    const q = prefill ?? searchFilter;
+    setAiFoodQuery(q);
+    setIsAiFoodModalOpen(true);
+    setAiFoodSuccessMsg(null);
+    if (q.trim()) {
+      handleRunAiFoodRecognition(q);
+    }
+  };
+
+  // Guardar alimento en Dexie customFoods y opcionalmente en el consumo de hoy
+  const handleSaveCustomFood = async () => {
+    if (!profile) return;
+    if (!formName.trim()) return;
+
+    const kcal = Math.max(0, Math.round(parseFloat(formKcal) || 0));
+    const proteinG = Math.max(0, parseFloat(formProteinG) || 0);
+    const carbsG = Math.max(0, parseFloat(formCarbsG) || 0);
+    const fatG = Math.max(0, parseFloat(formFatG) || 0);
+    const fiberG = Math.max(0, parseFloat(formFiberG) || 0);
+    const servingAmt = Math.max(1, parseFloat(formServingAmount) || 100);
+
+    const now = new Date().toISOString();
+    const newId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    const newRecord: CustomFoodRecord = {
+      id: newId,
+      userId: profile.id,
+      name: formName.trim(),
+      category: formCategory,
+      unit: formUnit,
+      per100: {
+        kcal,
+        proteinG,
+        carbsG,
+        fatG,
+        fiberG,
+      },
+      servings: [
+        {
+          label: formServingLabel.trim() || `1 porción (${servingAmt} ${formUnit})`,
+          amount: servingAmt,
+        },
+      ],
+      tags: ['usuario', 'ia_custom', formCategory],
+      notes: formNotes.trim(),
+      source: 'estimado',
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      version: 1,
+    };
+
+    await db.customFoods.put(newRecord);
+    await loadCustomFoods();
+
+    if (formAlsoLogToday) {
+      const factor = servingAmt / 100;
+      await db.foodLogs.put({
+        id: crypto.randomUUID(),
+        userId: profile.id,
+        date: todayStr,
+        slot: formLogSlot,
+        foodId: newId,
+        foodName: formName.trim(),
+        amount: servingAmt,
+        unit: formUnit,
+        nutrients: {
+          kcal: Math.round(kcal * factor),
+          proteinG: parseFloat((proteinG * factor).toFixed(1)),
+          carbsG: parseFloat((carbsG * factor).toFixed(1)),
+          fatG: parseFloat((fatG * factor).toFixed(1)),
+          fiberG: parseFloat((fiberG * factor).toFixed(1)),
+        },
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        version: 1,
+      });
+      await loadLogs();
+    }
+
+    setSelectedFoodId(newId);
+    setAiFoodSuccessMsg(`¡"${formName.trim()}" guardado en tu catálogo!`);
+    setTimeout(() => {
+      setIsAiFoodModalOpen(false);
+      setAiFoodSuccessMsg(null);
+    }, 1300);
+  };
+
+  const handleDeleteCustomFood = async (id: string) => {
+    if (!profile) return;
+    const now = new Date().toISOString();
+    const existing = await db.customFoods.get(id);
+    if (existing) {
+      await db.customFoods.put({
+        ...existing,
+        deletedAt: now,
+        updatedAt: now,
+      });
+      await loadCustomFoods();
+    }
+  };
+
+  const selectedFood = allFoods.find((f) => f.id === selectedFoodId) ?? allFoods[0] ?? FOODS[0]!;
   const previewNutrients = nutrientsFor(selectedFood, parseFloat(amountInput) || 0);
 
   // Normalizador para búsqueda insensible a mayúsculas y acentos
@@ -240,7 +427,7 @@ export const NutritionScreen: React.FC = () => {
 
   // Catálogo inteligente filtrado
   const filteredFoods = useMemo(() => {
-    let list = FOODS;
+    let list = allFoods;
 
     // Filtro por categoría seleccionada
     if (catalogCategory === 'popular') {
@@ -277,8 +464,11 @@ export const NutritionScreen: React.FC = () => {
         return tokens.every((token) => searchable.includes(token));
       });
     } else if (catalogCategory === 'all') {
-      // Si está en 'all' y sin búsqueda, mostrar primero los populares y básicos
+      // Si está en 'all' y sin búsqueda, mostrar primero los alimentos del usuario, luego los populares
       list = [...list].sort((a, b) => {
+        const aCustom = a.tags?.includes('usuario') ? 2 : 0;
+        const bCustom = b.tags?.includes('usuario') ? 2 : 0;
+        if (aCustom !== bCustom) return bCustom - aCustom;
         const aPop = POPULAR_FOOD_IDS.has(a.id) ? 1 : 0;
         const bPop = POPULAR_FOOD_IDS.has(b.id) ? 1 : 0;
         if (aPop !== bPop) return bPop - aPop;
@@ -287,7 +477,7 @@ export const NutritionScreen: React.FC = () => {
     }
 
     return list;
-  }, [catalogCategory, searchFilter, POPULAR_FOOD_IDS]);
+  }, [catalogCategory, searchFilter, POPULAR_FOOD_IDS, allFoods]);
 
   const totalKcal = foodLogs.reduce((acc, f) => acc + f.nutrients.kcal, 0);
   const totalProt = Math.round(foodLogs.reduce((acc, f) => acc + f.nutrients.proteinG, 0));
@@ -340,6 +530,17 @@ export const NutritionScreen: React.FC = () => {
             <span>🏔️</span>
             <span>Despensa Sierra / Celendín</span>
           </button>
+          <button
+            onClick={() => setActiveTab('custom_foods')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'custom_foods'
+                ? 'bg-gradient-to-r from-teal-400 to-emerald-400 text-slate-950 shadow-lg shadow-teal-500/20'
+                : 'bg-slate-800 text-teal-300 hover:text-white border border-teal-500/30'
+            }`}
+          >
+            <span>✨</span>
+            <span>Mis Alimentos IA ({customFoods.length})</span>
+          </button>
         </div>
       </div>
 
@@ -375,17 +576,40 @@ export const NutritionScreen: React.FC = () => {
               <h3 className="text-lg font-bold text-white">Alimentos Registrados Hoy</h3>
               <p className="text-xs text-slate-400">Control estricto de macronutrientes para pérdida de grasa y retención muscular.</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setAiFoodQuery('');
+                  setAiEstimate(null);
+                  setFormName('');
+                  setFormCategory('dishes');
+                  setFormUnit('g');
+                  setFormServingLabel('1 porción (100g)');
+                  setFormServingAmount('100');
+                  setFormKcal('150');
+                  setFormProteinG('10');
+                  setFormCarbsG('15');
+                  setFormFatG('5');
+                  setFormFiberG('2');
+                  setFormNotes('');
+                  setAiFoodSuccessMsg(null);
+                  setIsAiFoodModalOpen(true);
+                }}
+                className="px-3.5 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1.5"
+              >
+                <span>🤖</span>
+                <span>+ Crear con IA</span>
+              </button>
               <button
                 onClick={() => setIsPhotoModalOpen(true)}
-                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1.5"
+                className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1.5"
               >
                 <span>📸</span>
                 <span>Subir Foto del Plato (IA)</span>
               </button>
               <button
                 onClick={() => setIsModalOpen(true)}
-                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1"
+                className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1"
               >
                 <span>+</span>
                 <span>Registrar Comida</span>
@@ -535,6 +759,159 @@ export const NutritionScreen: React.FC = () => {
         </div>
       )}
 
+      {/* 4. Pestaña de Alimentos Personalizados Creados con IA */}
+      {activeTab === 'custom_foods' && (
+        <div className="space-y-4">
+          <div className="bg-slate-900 border border-teal-500/30 p-5 rounded-2xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">✨</span>
+                <h3 className="text-lg font-bold text-white">Mis Alimentos Creados con IA</h3>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                Tus preparaciones caseras, platos locales y suplementos reconocidos y calculados
+                automáticamente con base en CENAN / USDA y gastronomía peruana.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAiFoodQuery('');
+                setAiEstimate(null);
+                setFormName('');
+                setFormCategory('dishes');
+                setFormUnit('g');
+                setFormServingLabel('1 porción (100g)');
+                setFormServingAmount('100');
+                setFormKcal('150');
+                setFormProteinG('10');
+                setFormCarbsG('15');
+                setFormFatG('5');
+                setFormFiberG('2');
+                setFormNotes('');
+                setAiFoodSuccessMsg(null);
+                setIsAiFoodModalOpen(true);
+              }}
+              className="px-4 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
+            >
+              <span>🤖</span>
+              <span>+ Crear Nuevo Alimento con IA</span>
+            </button>
+          </div>
+
+          {customFoods.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-4">
+              <div className="text-4xl">🍲</div>
+              <div className="max-w-md mx-auto space-y-1.5">
+                <h4 className="text-sm font-bold text-white">Aún no tienes alimentos personalizados</h4>
+                <p className="text-xs text-slate-400">
+                  Usa el asistente de IA para agregar cualquier plato típico, batido o preparación.
+                  La IA detectará automáticamente sus ingredientes y calculará proteínas, carbohidratos, grasas y calorías.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap justify-center gap-2 pt-2">
+                {[
+                  'Lomo saltado casero',
+                  'Caldo verde con quesillo',
+                  'Tarwi con papa sancochada',
+                  'Batido whey con avena y plátano',
+                  'Sango de trigo con queso',
+                  'Seco de res con frijoles',
+                ].map((sample) => (
+                  <button
+                    key={sample}
+                    type="button"
+                    onClick={() => handleOpenAiFoodModalWithQuery(sample)}
+                    className="text-[11px] bg-slate-800 hover:bg-slate-700 text-teal-300 px-3 py-1.5 rounded-lg border border-teal-500/20 transition-colors"
+                  >
+                    + {sample}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {customFoods.map((cf) => (
+                <div
+                  key={cf.id}
+                  className="bg-slate-900/90 border border-teal-500/30 hover:border-teal-400/60 p-4 rounded-xl transition-all shadow-md flex flex-col justify-between space-y-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] bg-teal-500/20 text-teal-300 border border-teal-500/30 px-1.5 py-0.5 rounded font-mono uppercase">
+                          ✨ IA
+                        </span>
+                        <h4 className="text-xs font-bold text-white">{cf.name}</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCustomFood(cf.id)}
+                        className="text-slate-500 hover:text-rose-400 p-1 text-xs transition-colors rounded"
+                        title="Eliminar alimento de mi catálogo"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                      <span className="capitalize">{FOOD_CATEGORY_LABELS[cf.category as FoodCategory] || cf.category}</span>
+                      <span>•</span>
+                      <span>{cf.servings?.[0]?.label || `1 porción (${cf.unit})`}</span>
+                    </div>
+
+                    {cf.notes && (
+                      <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed bg-slate-950/60 p-2 rounded-lg border border-slate-800">
+                        {cf.notes}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                    <div className="grid grid-cols-4 gap-1 text-center text-[10px]">
+                      <div className="bg-slate-850 p-1 rounded">
+                        <span className="text-slate-500 block">Kcal</span>
+                        <span className="font-extrabold text-emerald-400">{cf.per100.kcal}</span>
+                      </div>
+                      <div className="bg-slate-850 p-1 rounded">
+                        <span className="text-slate-500 block">Prot</span>
+                        <span className="font-extrabold text-cyan-300">{cf.per100.proteinG}g</span>
+                      </div>
+                      <div className="bg-slate-850 p-1 rounded">
+                        <span className="text-slate-500 block">Carb</span>
+                        <span className="font-extrabold text-amber-300">{cf.per100.carbsG}g</span>
+                      </div>
+                      <div className="bg-slate-850 p-1 rounded">
+                        <span className="text-slate-500 block">Grasa</span>
+                        <span className="font-extrabold text-rose-300">{cf.per100.fatG}g</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        Por cada 100 {cf.unit}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedFoodId(cf.id);
+                          setAmountInput(String(cf.servings?.[0]?.amount || 100));
+                          setIsModalOpen(true);
+                        }}
+                        className="text-[11px] font-bold text-teal-300 hover:text-white bg-teal-500/10 hover:bg-teal-500/30 px-2 py-1 rounded transition-colors"
+                      >
+                        + Registrar consumo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Modal de Registro de Comida */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -571,7 +948,20 @@ export const NutritionScreen: React.FC = () => {
 
             {/* Buscador inteligente de alimentos y selector por categoría */}
             <div className="space-y-2">
-              <label className="text-xs text-slate-300 font-semibold block">Buscar en Catálogo:</label>
+              <div className="flex justify-between items-center">
+                <label className="text-xs text-slate-300 font-semibold block">Buscar en Catálogo:</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    handleOpenAiFoodModalWithQuery(searchFilter);
+                  }}
+                  className="text-[11px] font-bold text-teal-400 hover:text-teal-300 flex items-center gap-1 transition-colors"
+                >
+                  <span>✨</span>
+                  <span>+ Crear con IA</span>
+                </button>
+              </div>
 
               {/* Pestañas rápidas de categorías */}
               <div className="flex flex-wrap gap-1">
@@ -622,12 +1012,26 @@ export const NutritionScreen: React.FC = () => {
               {/* Lista scrollable de resultados */}
               <div className="max-h-48 overflow-y-auto space-y-1 bg-slate-950 p-2 rounded-xl border border-slate-800">
                 {filteredFoods.length === 0 ? (
-                  <div className="text-center py-4 text-xs text-slate-500">
-                    No se encontraron alimentos para &quot;{searchFilter}&quot;. Prueba con otro término.
+                  <div className="text-center py-5 px-3 space-y-2.5">
+                    <div className="text-xs text-slate-400">
+                      No se encontraron alimentos para &quot;{searchFilter}&quot;.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsModalOpen(false);
+                        handleOpenAiFoodModalWithQuery(searchFilter);
+                      }}
+                      className="px-3.5 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-transform active:scale-95 inline-flex items-center gap-1.5"
+                    >
+                      <span>🤖</span>
+                      <span>Crear &quot;{searchFilter}&quot; con IA y autocompletar</span>
+                    </button>
                   </div>
                 ) : (
                   filteredFoods.slice(0, 40).map((f) => {
                     const isRegional = f.tags?.includes('cajamarca') || f.tags?.includes('celendin');
+                    const isCustomAi = f.tags?.includes('ia_custom') || f.tags?.includes('usuario');
                     const isSelected = selectedFoodId === f.id;
                     return (
                       <button
@@ -640,11 +1044,15 @@ export const NutritionScreen: React.FC = () => {
                         }`}
                       >
                         <div className="flex items-center gap-1.5 flex-1 min-w-0 pr-2">
-                          {isRegional && (
+                          {isCustomAi ? (
+                            <span className="text-[9px] bg-teal-500/20 text-teal-300 px-1.5 py-0.5 rounded border border-teal-500/30 whitespace-nowrap">
+                              ✨ IA
+                            </span>
+                          ) : isRegional ? (
                             <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">
                               🏔️ Andino
                             </span>
-                          )}
+                          ) : null}
                           <span className="truncate">{f.name}</span>
                         </div>
                         <div className="text-right text-[10px] text-slate-400 whitespace-nowrap font-mono">
@@ -988,7 +1396,7 @@ export const NutritionScreen: React.FC = () => {
                             onChange={(e) => setExtraFoodId(e.target.value)}
                             className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
                           >
-                            {FOODS.map((f) => (
+                            {allFoods.map((f) => (
                               <option key={f.id} value={f.id}>
                                 {f.name} ({f.per100.kcal} kcal/100g)
                               </option>
@@ -1063,6 +1471,375 @@ export const NutritionScreen: React.FC = () => {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Reconocimiento y Creación de Alimento con IA */}
+      {isAiFoodModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-teal-500/30 rounded-2xl max-w-xl w-full p-6 space-y-4 my-8 shadow-2xl">
+            {/* Cabecera */}
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">🤖</span>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Asistente de IA: Crear Nuevo Alimento
+                  </h3>
+                  <p className="text-[11px] text-teal-300">
+                    Autocompleta proteínas, carbohidratos, grasas y calorías según CENAN / USDA
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAiFoodModalOpen(false)}
+                className="text-slate-400 hover:text-white font-bold p-1 text-sm transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Entrada de Consulta de IA */}
+            <div className="space-y-2 bg-slate-950 p-4 rounded-xl border border-teal-500/20">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Escribe o describe el alimento / plato a reconocer:
+              </label>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={aiFoodQuery}
+                  onChange={(e) => setAiFoodQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleRunAiFoodRecognition();
+                    }
+                  }}
+                  placeholder="Ej. Seco de res con frijoles, Caldo verde con huevo, Batido de avena y whey..."
+                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRunAiFoodRecognition()}
+                  disabled={isAiAnalyzingFood || !aiFoodQuery.trim()}
+                  className="px-4 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-xs rounded-xl shadow transition-all flex items-center gap-1.5 whitespace-nowrap active:scale-95"
+                >
+                  {isAiAnalyzingFood ? (
+                    <>
+                      <span className="animate-spin text-sm">⚙️</span>
+                      <span>Calculando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>✨</span>
+                      <span>Calcular con IA</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Sugerencias rápidas para probar con un clic */}
+              <div className="pt-1">
+                <span className="text-[10px] text-slate-400 block mb-1">Prueba rápida:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Lomo saltado casero',
+                    'Caldo verde con quesillo y huevo',
+                    'Tarwi sancochado con papa',
+                    'Ají de gallina con arroz',
+                    'Batido whey con plátano y avena',
+                    'Sango de trigo con queso',
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => {
+                        setAiFoodQuery(chip);
+                        handleRunAiFoodRecognition(chip);
+                      }}
+                      className="text-[10px] bg-slate-850 hover:bg-slate-800 text-teal-300/90 border border-teal-500/20 px-2 py-0.5 rounded-lg transition-colors"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Veredicto / Razonamiento de IA */}
+            {aiEstimate && (
+              <div className="bg-teal-950/20 border border-teal-500/30 p-3 rounded-xl space-y-1.5 text-xs animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-teal-300 font-bold">
+                    <span>🧠</span>
+                    <span>Reconocido por IA: {aiEstimate.name}</span>
+                  </div>
+                  <span className="text-[10px] bg-teal-500/20 text-teal-300 px-2 py-0.5 rounded font-mono font-bold">
+                    {aiEstimate.confidencePct}% confianza
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  {aiEstimate.notes}
+                </p>
+                {aiEstimate.dietaryInsights && aiEstimate.dietaryInsights.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 pt-1">
+                    <span className="text-[10px] text-slate-400">Análisis nutricional:</span>
+                    {aiEstimate.dietaryInsights.map((insight: string, i: number) => (
+                      <span
+                        key={i}
+                        className="text-[10px] bg-slate-800 text-teal-200 px-1.5 py-0.5 rounded border border-teal-500/20"
+                      >
+                        {insight}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Formulario Editable de Macronutrientes */}
+            <div className="space-y-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                    Nombre del alimento:
+                  </label>
+                  <input
+                    type="text"
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    placeholder="Ej. Lomo saltado"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                    Categoría:
+                  </label>
+                  <select
+                    value={formCategory}
+                    onChange={(e) => setFormCategory(e.target.value as FoodCategory)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                  >
+                    {(
+                      [
+                        'dishes',
+                        'protein',
+                        'carbs',
+                        'vegetables',
+                        'fruits',
+                        'fats',
+                        'dairy',
+                        'drinks',
+                        'processed',
+                      ] as FoodCategory[]
+                    ).map((cat) => (
+                      <option key={cat} value={cat}>
+                        {FOOD_CATEGORY_LABELS[cat] || cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Porción sugerida y unidad */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                    Unidad:
+                  </label>
+                  <select
+                    value={formUnit}
+                    onChange={(e) => setFormUnit(e.target.value as 'g' | 'ml')}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                  >
+                    <option value="g">Gramos (g)</option>
+                    <option value="ml">Mililitros (ml)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                    Cantidad porción:
+                  </label>
+                  <input
+                    type="number"
+                    value={formServingAmount}
+                    onChange={(e) => setFormServingAmount(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                    Etiqueta porción:
+                  </label>
+                  <input
+                    type="text"
+                    value={formServingLabel}
+                    onChange={(e) => setFormServingLabel(e.target.value)}
+                    placeholder="1 plato (350g)"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Macronutrientes por 100g */}
+              <div>
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                  Macronutrientes (por cada 100 {formUnit}):
+                </label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  <div className="bg-slate-800/80 p-2 rounded-lg border border-slate-700/70 text-center">
+                    <span className="text-[10px] text-slate-400 block font-semibold">Kcal</span>
+                    <input
+                      type="number"
+                      value={formKcal}
+                      onChange={(e) => setFormKcal(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded mt-1 px-1 py-0.5 text-center text-xs font-bold text-emerald-400 font-mono"
+                    />
+                  </div>
+
+                  <div className="bg-slate-800/80 p-2 rounded-lg border border-cyan-500/20 text-center">
+                    <span className="text-[10px] text-cyan-400 block font-semibold">Prot (g)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formProteinG}
+                      onChange={(e) => setFormProteinG(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded mt-1 px-1 py-0.5 text-center text-xs font-bold text-cyan-300 font-mono"
+                    />
+                  </div>
+
+                  <div className="bg-slate-800/80 p-2 rounded-lg border border-amber-500/20 text-center">
+                    <span className="text-[10px] text-amber-400 block font-semibold">Carb (g)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formCarbsG}
+                      onChange={(e) => setFormCarbsG(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded mt-1 px-1 py-0.5 text-center text-xs font-bold text-amber-300 font-mono"
+                    />
+                  </div>
+
+                  <div className="bg-slate-800/80 p-2 rounded-lg border border-rose-500/20 text-center">
+                    <span className="text-[10px] text-rose-400 block font-semibold">Grasa (g)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formFatG}
+                      onChange={(e) => setFormFatG(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded mt-1 px-1 py-0.5 text-center text-xs font-bold text-rose-300 font-mono"
+                    />
+                  </div>
+
+                  <div className="bg-slate-800/80 p-2 rounded-lg border border-teal-500/20 text-center">
+                    <span className="text-[10px] text-teal-400 block font-semibold">Fibra (g)</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formFiberG}
+                      onChange={(e) => setFormFiberG(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded mt-1 px-1 py-0.5 text-center text-xs font-bold text-teal-300 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Previsualización para la porción habitual completa */}
+              {(() => {
+                const amt = parseFloat(formServingAmount) || 100;
+                const factor = amt / 100;
+                const servingKcal = Math.round((parseFloat(formKcal) || 0) * factor);
+                const servingP = ((parseFloat(formProteinG) || 0) * factor).toFixed(1);
+                const servingC = ((parseFloat(formCarbsG) || 0) * factor).toFixed(1);
+                const servingF = ((parseFloat(formFatG) || 0) * factor).toFixed(1);
+                return (
+                  <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-xs flex justify-between items-center text-slate-300 font-mono">
+                    <span className="text-slate-400 text-[11px]">
+                      Totales por porción ({amt} {formUnit}):
+                    </span>
+                    <span className="text-[11px]">
+                      <strong className="text-emerald-400">{servingKcal} kcal</strong> •{' '}
+                      <span className="text-cyan-300">{servingP}g P</span> •{' '}
+                      <span className="text-amber-300">{servingC}g C</span> •{' '}
+                      <span className="text-rose-300">{servingF}g G</span>
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Notas y origen */}
+              <div>
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                  Notas / Descripción / Fuente:
+                </label>
+                <input
+                  type="text"
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  placeholder="Detalles sobre la preparación o ingredientes..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                />
+              </div>
+
+              {/* Opción de registrar directamente hoy */}
+              <div className="bg-slate-850 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={formAlsoLogToday}
+                    onChange={(e) => setFormAlsoLogToday(e.target.checked)}
+                    className="w-4 h-4 rounded text-teal-500 focus:ring-teal-500 bg-slate-800 border-slate-700"
+                  />
+                  <span>Registrar también en mi consumo de hoy</span>
+                </label>
+
+                {formAlsoLogToday && (
+                  <select
+                    value={formLogSlot}
+                    onChange={(e) => setFormLogSlot(e.target.value as MealSlot)}
+                    className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white capitalize"
+                  >
+                    {(['breakfast', 'lunch', 'dinner', 'snack'] as MealSlot[]).map((s) => (
+                      <option key={s} value={s}>
+                        {MEAL_SLOT_LABELS[s] || s}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {aiFoodSuccessMsg && (
+              <div className="p-3 bg-emerald-950/60 border border-emerald-500 text-emerald-300 text-xs text-center font-bold rounded-xl animate-fade-in">
+                ✓ {aiFoodSuccessMsg}
+              </div>
+            )}
+
+            {/* Acciones del Modal */}
+            <div className="flex gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsAiFoodModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCustomFood}
+                disabled={!formName.trim()}
+                className="flex-1 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <span>💾</span>
+                <span>Guardar Alimento en mi Catálogo</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

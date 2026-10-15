@@ -85,7 +85,16 @@ export interface WorkoutExerciseRecord extends SyncMeta { planId: string; dayId:
 export interface WorkoutSessionRecord extends SyncMeta { date: string; planId?: string | null; dayId?: string | null; startedAt: string; finishedAt?: string | null; status: 'in_progress' | 'completed' | 'skipped'; perceivedEffort?: number; notes?: string }
 export interface WorkoutSetRecord extends SyncMeta { sessionId: string; workoutExerciseId?: string | null; exerciseId: string; /** si se usó una alternativa: id del ejercicio planificado */ substitutedFrom?: string | null; setNumber: number; weightKg?: number; reps?: number; durationSec?: number; rir?: number; restSec?: number; completed: boolean; isWarmup: boolean }
 
-export interface CustomFoodRecord extends SyncMeta { name: string; category: string; unit: 'g' | 'ml'; per100: Nutrients; servings: { label: string; amount: number }[] }
+export interface CustomFoodRecord extends SyncMeta {
+  name: string;
+  category: string;
+  unit: 'g' | 'ml';
+  per100: Nutrients;
+  servings: { label: string; amount: number }[];
+  tags?: string[];
+  notes?: string;
+  source?: string;
+}
 export interface MealPlanRecord extends SyncMeta { weekStart: string; calories: number; generatedFrom: string; active: boolean }
 export interface MealRecord extends SyncMeta { mealPlanId: string; weekday: IsoWeekday; slot: MealSlot; position: number }
 export interface MealItemRecord extends SyncMeta { mealId: string; foodId: string; amount: number }
