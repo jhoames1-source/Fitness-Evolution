@@ -13,6 +13,11 @@ import {
   recognizeAndEstimateFood,
   FoodEstimateResult,
 } from '../../domain/nutrition/ai-food-recognizer';
+import {
+  CommunityCatalogService,
+  CommunityFoodItem,
+  communityItemToFood,
+} from '../../domain/nutrition/community-catalog';
 import type { CustomFoodRecord, FoodLogRecord } from '../../data/local/schema';
 import {
   Food,
@@ -28,15 +33,21 @@ export const NutritionScreen: React.FC = () => {
 
   const [foodLogs, setFoodLogs] = useState<FoodLogRecord[]>([]);
   const [customFoods, setCustomFoods] = useState<CustomFoodRecord[]>([]);
+  const [communityFoods, setCommunityFoods] = useState<CommunityFoodItem[]>([]);
+  const [isSyncingCommunity, setIsSyncingCommunity] = useState(false);
+  const [communitySyncMessage, setCommunitySyncMessage] = useState<string | null>(null);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<MealSlot>('lunch');
   const [selectedFoodId, setSelectedFoodId] = useState(FOODS[0]!.id);
   const [amountInput, setAmountInput] = useState('150');
   const [searchFilter, setSearchFilter] = useState('');
   const [catalogCategory, setCatalogCategory] = useState<
-    'all' | 'popular' | 'protein' | 'carbs' | 'vegetables' | 'dairy' | 'cajamarca'
+    'all' | 'popular' | 'protein' | 'carbs' | 'vegetables' | 'dairy' | 'cajamarca' | 'community'
   >('popular');
-  const [activeTab, setActiveTab] = useState<'today' | 'weekly_plan' | 'sierra_catalog' | 'custom_foods'>('today');
+  const [activeTab, setActiveTab] = useState<
+    'today' | 'weekly_plan' | 'sierra_catalog' | 'custom_foods' | 'community_catalog'
+  >('today');
 
   // Estados para creación y reconocimiento de alimentos con IA
   const [isAiFoodModalOpen, setIsAiFoodModalOpen] = useState(false);
@@ -44,6 +55,13 @@ export const NutritionScreen: React.FC = () => {
   const [isAiAnalyzingFood, setIsAiAnalyzingFood] = useState(false);
   const [aiEstimate, setAiEstimate] = useState<FoodEstimateResult | null>(null);
   const [aiFoodSuccessMsg, setAiFoodSuccessMsg] = useState<string | null>(null);
+  const [formShareWithCommunity, setFormShareWithCommunity] = useState(true);
+  const [formContributorName, setFormContributorName] = useState('');
+
+  // Modal para importar y exportar catálogo comunitario
+  const [isExportImportModalOpen, setIsExportImportModalOpen] = useState(false);
+  const [jsonImportInput, setJsonImportInput] = useState('');
+  const [importStatusMsg, setImportStatusMsg] = useState<string | null>(null);
 
   // Formulario del nuevo alimento reconocido por IA (editable)
   const [formName, setFormName] = useState('');
@@ -88,7 +106,16 @@ export const NutritionScreen: React.FC = () => {
     setCustomFoods(list.filter((x) => !x.deletedAt));
   };
 
-  // Catálogo unificado: Alimentos base + Alimentos personalizados creados por IA por el usuario
+  const loadCommunityFoods = async () => {
+    try {
+      const list = await CommunityCatalogService.getAll();
+      setCommunityFoods(list);
+    } catch (err) {
+      console.warn('Error cargando alimentos comunitarios:', err);
+    }
+  };
+
+  // Catálogo unificado: Alimentos base + Alimentos personalizados del usuario + Catálogo Comunitario IA
   const allFoods: Food[] = useMemo(() => {
     const customAsFoods: Food[] = customFoods.map((cf) => ({
       id: cf.id,
@@ -103,12 +130,34 @@ export const NutritionScreen: React.FC = () => {
       tags: ['usuario', 'ia_custom', ...(cf.tags || [])],
       notes: cf.notes,
     }));
-    return [...customAsFoods, ...FOODS];
-  }, [customFoods]);
+
+    const communityAsFoods: Food[] = communityFoods.map(communityItemToFood);
+
+    // Los alimentos personalizados del usuario prevalecen sobre los comunitarios si tienen el mismo nombre
+    const userFoodNames = new Set(customAsFoods.map((f) => f.name.toLowerCase().trim()));
+    const filteredCommunity = communityAsFoods.filter(
+      (cf) => !userFoodNames.has(cf.name.toLowerCase().trim())
+    );
+
+    return [...customAsFoods, ...filteredCommunity, ...FOODS];
+  }, [customFoods, communityFoods]);
 
   useEffect(() => {
     loadLogs();
     loadCustomFoods();
+    loadCommunityFoods();
+
+    // Sincronización en segundo plano con la nube
+    CommunityCatalogService.syncWithCloud().then((res) => {
+      if (res.synced > 0) {
+        loadCommunityFoods();
+      }
+    });
+
+    // Suscripción reactiva en tiempo real (BroadcastChannel y/o Supabase)
+    const unsubscribeCommunity = CommunityCatalogService.onUpdate(() => {
+      loadCommunityFoods();
+    });
 
     if (goal) {
       const menu = generateWeeklyMenu({
@@ -120,7 +169,11 @@ export const NutritionScreen: React.FC = () => {
       });
       setWeeklyMenu(menu);
     }
-  }, [profile, goal, db, customFoods.length]);
+
+    return () => {
+      unsubscribeCommunity();
+    };
+  }, [profile, goal, db, customFoods.length, communityFoods.length]);
 
   const handleSaveMeal = async () => {
     if (!profile) return;
@@ -372,12 +425,104 @@ export const NutritionScreen: React.FC = () => {
       await loadLogs();
     }
 
+    // Compartir en el Catálogo Comunitario para que todos los usuarios lo encuentren
+    if (formShareWithCommunity) {
+      try {
+        await CommunityCatalogService.publishFood({
+          name: formName.trim(),
+          category: formCategory,
+          unit: formUnit,
+          per100: {
+            kcal,
+            proteinG,
+            carbsG,
+            fatG,
+            fiberG,
+          },
+          servings: [
+            {
+              label: formServingLabel.trim() || `1 porción (${servingAmt} ${formUnit})`,
+              amount: servingAmt,
+            },
+          ],
+          notes: formNotes.trim(),
+          contributorName: formContributorName.trim() || profile.firstName || 'Usuario',
+          confidencePct: aiEstimate?.confidencePct ?? 92,
+          dietaryInsights: aiEstimate?.dietaryInsights || [],
+          tags: [formCategory, 'comunidad', 'ia_colaborativo'],
+        });
+        await loadCommunityFoods();
+      } catch (err) {
+        console.warn('Error compartiendo con el catálogo comunitario:', err);
+      }
+    }
+
     setSelectedFoodId(newId);
-    setAiFoodSuccessMsg(`¡"${formName.trim()}" guardado en tu catálogo!`);
+    setAiFoodSuccessMsg(
+      formShareWithCommunity
+        ? `¡"${formName.trim()}" guardado y compartido con la comunidad exitosamente!`
+        : `¡"${formName.trim()}" guardado en tu catálogo personal!`
+    );
     setTimeout(() => {
       setIsAiFoodModalOpen(false);
       setAiFoodSuccessMsg(null);
-    }, 1300);
+    }, 1500);
+  };
+
+  // Validar (upvote) un alimento comunitario aportado por otro usuario
+  const handleUpvoteCommunityFood = async (foodId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    await CommunityCatalogService.upvote(foodId);
+    await loadCommunityFoods();
+  };
+
+  // Sincronización manual con la nube
+  const handleManualCloudSync = async () => {
+    setIsSyncingCommunity(true);
+    setCommunitySyncMessage(null);
+    try {
+      const res = await CommunityCatalogService.syncWithCloud();
+      if (res.error === 'cloud_not_configured') {
+        setCommunitySyncMessage('Catálogo comunitario local sincronizado. Listo para sincronización con Supabase.');
+      } else if (res.error) {
+        setCommunitySyncMessage(`Aviso de sincronización: ${res.error}`);
+      } else {
+        setCommunitySyncMessage(`✓ ¡Sincronizado! ${res.synced} alimentos comunitarios actualizados desde la nube.`);
+        await loadCommunityFoods();
+      }
+    } finally {
+      setIsSyncingCommunity(false);
+      setTimeout(() => setCommunitySyncMessage(null), 4000);
+    }
+  };
+
+  // Exportar catálogo comunitario a JSON
+  const handleExportCommunityJson = async () => {
+    const jsonStr = await CommunityCatalogService.exportCatalogJson();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fitness-evolution-comunidad-${todayStr}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Importar catálogo comunitario desde JSON
+  const handleImportCommunityJson = async () => {
+    if (!jsonImportInput.trim()) return;
+    try {
+      const count = await CommunityCatalogService.importCatalogJson(jsonImportInput);
+      setImportStatusMsg(`✓ Se importaron ${count} alimentos comunitarios con éxito.`);
+      await loadCommunityFoods();
+      setTimeout(() => {
+        setIsExportImportModalOpen(false);
+        setImportStatusMsg(null);
+        setJsonImportInput('');
+      }, 1500);
+    } catch {
+      setImportStatusMsg('Error: El formato JSON no es válido.');
+    }
   };
 
   const handleDeleteCustomFood = async (id: string) => {
@@ -452,6 +597,8 @@ export const NutritionScreen: React.FC = () => {
       list = list.filter((f) => f.category === 'dairy');
     } else if (catalogCategory === 'cajamarca') {
       list = list.filter((f) => f.tags?.includes('cajamarca') || f.tags?.includes('celendin'));
+    } else if (catalogCategory === 'community') {
+      list = list.filter((f) => f.tags?.includes('comunidad'));
     }
 
     // Búsqueda por texto multi-término
@@ -464,11 +611,11 @@ export const NutritionScreen: React.FC = () => {
         return tokens.every((token) => searchable.includes(token));
       });
     } else if (catalogCategory === 'all') {
-      // Si está en 'all' y sin búsqueda, mostrar primero los alimentos del usuario, luego los populares
+      // Si está en 'all' y sin búsqueda, mostrar primero alimentos del usuario, luego de la comunidad, luego populares
       list = [...list].sort((a, b) => {
-        const aCustom = a.tags?.includes('usuario') ? 2 : 0;
-        const bCustom = b.tags?.includes('usuario') ? 2 : 0;
-        if (aCustom !== bCustom) return bCustom - aCustom;
+        const aScore = a.tags?.includes('usuario') ? 3 : a.tags?.includes('comunidad') ? 2 : 0;
+        const bScore = b.tags?.includes('usuario') ? 3 : b.tags?.includes('comunidad') ? 2 : 0;
+        if (aScore !== bScore) return bScore - aScore;
         const aPop = POPULAR_FOOD_IDS.has(a.id) ? 1 : 0;
         const bPop = POPULAR_FOOD_IDS.has(b.id) ? 1 : 0;
         if (aPop !== bPop) return bPop - aPop;
@@ -539,7 +686,18 @@ export const NutritionScreen: React.FC = () => {
             }`}
           >
             <span>✨</span>
-            <span>Mis Alimentos IA ({customFoods.length})</span>
+            <span>Mis Alimentos ({customFoods.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('community_catalog')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'community_catalog'
+                ? 'bg-gradient-to-r from-sky-400 to-blue-500 text-slate-950 shadow-lg shadow-sky-500/20 font-extrabold'
+                : 'bg-slate-800 text-sky-300 hover:text-white border border-sky-500/30'
+            }`}
+          >
+            <span>🌐</span>
+            <span>Comunidad IA ({communityFoods.length})</span>
           </button>
         </div>
       </div>
@@ -912,6 +1070,168 @@ export const NutritionScreen: React.FC = () => {
         </div>
       )}
 
+      {/* 5. Pestaña de Catálogo Comunitario & Aprendizaje Colectivo con IA */}
+      {activeTab === 'community_catalog' && (
+        <div className="space-y-4">
+          <div className="bg-slate-900 border border-sky-500/30 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🌐</span>
+                <h3 className="text-lg font-bold text-white">Catálogo Comunitario & Aprendizaje Colectivo IA</h3>
+                <span className="text-[10px] bg-sky-500/20 text-sky-300 border border-sky-500/30 px-2 py-0.5 rounded-full font-bold">
+                  {communityFoods.length} alimentos
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                Base colaborativa viva. Cada vez que tú u otro usuario crea un nuevo alimento con IA,
+                se sincroniza para que todos puedan buscarlo, usarlo en sus dietas y validar su composición.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleManualCloudSync}
+                disabled={isSyncingCommunity}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 font-semibold text-xs rounded-xl border border-sky-500/30 transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+              >
+                <span className={isSyncingCommunity ? 'animate-spin' : ''}>🔄</span>
+                <span>{isSyncingCommunity ? 'Sincronizando...' : 'Sincronizar Nube'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsExportImportModalOpen(true)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 active:scale-95"
+              >
+                <span>📋</span>
+                <span>Importar / Exportar</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAiFoodQuery('');
+                  setAiEstimate(null);
+                  setFormName('');
+                  setFormCategory('dishes');
+                  setFormUnit('g');
+                  setFormServingLabel('1 porción (100g)');
+                  setFormServingAmount('100');
+                  setFormKcal('150');
+                  setFormProteinG('10');
+                  setFormCarbsG('15');
+                  setFormFatG('5');
+                  setFormFiberG('2');
+                  setFormNotes('');
+                  setFormShareWithCommunity(true);
+                  setAiFoodSuccessMsg(null);
+                  setIsAiFoodModalOpen(true);
+                }}
+                className="px-3.5 py-2 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-1.5"
+              >
+                <span>🤖</span>
+                <span>+ Aportar con IA</span>
+              </button>
+            </div>
+          </div>
+
+          {communitySyncMessage && (
+            <div className="p-3 bg-sky-950/40 border border-sky-500/40 text-sky-200 text-xs rounded-xl animate-fade-in flex items-center gap-2">
+              <span>ℹ️</span>
+              <span>{communitySyncMessage}</span>
+            </div>
+          )}
+
+          {/* Grilla de Alimentos Comunitarios */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {communityFoods.map((cf) => (
+              <div
+                key={cf.id}
+                className="bg-slate-900/90 border border-slate-800 hover:border-sky-500/50 p-4 rounded-xl transition-all shadow-md flex flex-col justify-between space-y-3"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <span className="text-[9px] bg-sky-500/20 text-sky-300 border border-sky-500/30 px-1.5 py-0.5 rounded font-mono uppercase whitespace-nowrap">
+                        🌐 Comunidad
+                      </span>
+                      <h4 className="text-xs font-bold text-white truncate">{cf.name}</h4>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleUpvoteCommunityFood(cf.id, e)}
+                      className="flex items-center gap-1 text-[11px] bg-slate-800 hover:bg-amber-500/20 text-amber-300 border border-slate-700 hover:border-amber-500/40 px-2 py-0.5 rounded-lg transition-all active:scale-90 font-mono"
+                      title="Validar y apoyar este alimento para la comunidad"
+                    >
+                      <span>👍</span>
+                      <span>{cf.upvotes}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                    <span className="capitalize">{FOOD_CATEGORY_LABELS[cf.category as FoodCategory] || cf.category}</span>
+                    <span>•</span>
+                    <span>{cf.servings?.[0]?.label || `1 porción (${cf.unit})`}</span>
+                  </div>
+
+                  <div className="text-[10px] text-slate-500 flex items-center gap-1 font-mono">
+                    <span>Aportado por:</span>
+                    <span className="text-sky-300 font-semibold">{cf.contributorName}</span>
+                    <span>• {cf.confidencePct}% conf. IA</span>
+                  </div>
+
+                  {cf.notes && (
+                    <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed bg-slate-950/60 p-2 rounded-lg border border-slate-800">
+                      {cf.notes}
+                    </p>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                  <div className="grid grid-cols-4 gap-1 text-center text-[10px]">
+                    <div className="bg-slate-850 p-1 rounded">
+                      <span className="text-slate-500 block">Kcal</span>
+                      <span className="font-extrabold text-emerald-400">{cf.per100.kcal}</span>
+                    </div>
+                    <div className="bg-slate-850 p-1 rounded">
+                      <span className="text-slate-500 block">Prot</span>
+                      <span className="font-extrabold text-cyan-300">{cf.per100.proteinG}g</span>
+                    </div>
+                    <div className="bg-slate-850 p-1 rounded">
+                      <span className="text-slate-500 block">Carb</span>
+                      <span className="font-extrabold text-amber-300">{cf.per100.carbsG}g</span>
+                    </div>
+                    <div className="bg-slate-850 p-1 rounded">
+                      <span className="text-slate-500 block">Grasa</span>
+                      <span className="font-extrabold text-rose-300">{cf.per100.fatG}g</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      Por cada 100 {cf.unit}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFoodId(cf.id);
+                        setAmountInput(String(cf.servings?.[0]?.amount || 100));
+                        setIsModalOpen(true);
+                      }}
+                      className="text-[11px] font-bold text-sky-300 hover:text-white bg-sky-500/10 hover:bg-sky-500/30 px-2 py-1 rounded transition-colors"
+                    >
+                      + Registrar consumo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Modal de Registro de Comida */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -967,6 +1287,7 @@ export const NutritionScreen: React.FC = () => {
               <div className="flex flex-wrap gap-1">
                 {[
                   { id: 'popular', label: '🔥 Populares' },
+                  { id: 'community', label: '🌐 Comunidad IA' },
                   { id: 'protein', label: '🍳 Huevos & Proteína' },
                   { id: 'carbs', label: '🥔 Tubérculos & Arroz' },
                   { id: 'vegetables', label: '🥗 Verduras' },
@@ -993,7 +1314,7 @@ export const NutritionScreen: React.FC = () => {
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Ej. Huevo cocido, frito, papa, pollo, cuy, atún..."
+                  placeholder="Ej. Huevo cocido, frito, papa, pollo, cuy, atún, mango..."
                   value={searchFilter}
                   onChange={(e) => setSearchFilter(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-3 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
@@ -1032,6 +1353,7 @@ export const NutritionScreen: React.FC = () => {
                   filteredFoods.slice(0, 40).map((f) => {
                     const isRegional = f.tags?.includes('cajamarca') || f.tags?.includes('celendin');
                     const isCustomAi = f.tags?.includes('ia_custom') || f.tags?.includes('usuario');
+                    const isCommunity = f.tags?.includes('comunidad');
                     const isSelected = selectedFoodId === f.id;
                     return (
                       <button
@@ -1044,9 +1366,20 @@ export const NutritionScreen: React.FC = () => {
                         }`}
                       >
                         <div className="flex items-center gap-1.5 flex-1 min-w-0 pr-2">
-                          {isCustomAi ? (
+                          {isCommunity ? (
+                            <span className="text-[9px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded border border-sky-500/30 whitespace-nowrap flex items-center gap-1">
+                              <span>🌐 Comunidad</span>
+                              <span
+                                onClick={(e) => handleUpvoteCommunityFood(f.id, e)}
+                                title="Votar / Validar alimento"
+                                className="cursor-pointer hover:text-white"
+                              >
+                                👍
+                              </span>
+                            </span>
+                          ) : isCustomAi ? (
                             <span className="text-[9px] bg-teal-500/20 text-teal-300 px-1.5 py-0.5 rounded border border-teal-500/30 whitespace-nowrap">
-                              ✨ IA
+                              ✨ Mi Alimento
                             </span>
                           ) : isRegional ? (
                             <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">
@@ -1787,6 +2120,41 @@ export const NutritionScreen: React.FC = () => {
                 />
               </div>
 
+              {/* Opción de Compartir con la Comunidad */}
+              <div className="bg-gradient-to-r from-sky-950/40 to-blue-950/40 p-3.5 rounded-xl border border-sky-500/30 space-y-2.5">
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs text-sky-200">
+                  <input
+                    type="checkbox"
+                    checked={formShareWithCommunity}
+                    onChange={(e) => setFormShareWithCommunity(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded text-sky-500 focus:ring-sky-500 bg-slate-800 border-slate-700"
+                  />
+                  <div>
+                    <span className="font-bold text-sky-300">
+                      🌐 Compartir en el Catálogo Comunitario IA (Colaborativo)
+                    </span>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Este alimento se sincronizará automáticamente para que otros usuarios y dispositivos puedan buscarlo, usarlo en sus dietas y validar sus macronutrientes.
+                    </p>
+                  </div>
+                </label>
+
+                {formShareWithCommunity && (
+                  <div className="pt-2 pl-6 border-t border-sky-500/20 flex flex-col sm:flex-row sm:items-center gap-1.5">
+                    <label className="text-[10px] text-slate-400 whitespace-nowrap">
+                      Tu nombre o alias de autor:
+                    </label>
+                    <input
+                      type="text"
+                      value={formContributorName}
+                      onChange={(e) => setFormContributorName(e.target.value)}
+                      placeholder="Ej: Chef Fitness / Atleta Cajamarca"
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500"
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Opción de registrar directamente hoy */}
               <div className="bg-slate-850 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
@@ -1836,9 +2204,97 @@ export const NutritionScreen: React.FC = () => {
                 disabled={!formName.trim()}
                 className="flex-1 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-1.5"
               >
-                <span>💾</span>
-                <span>Guardar Alimento en mi Catálogo</span>
+                <span>{formShareWithCommunity ? '🌐' : '💾'}</span>
+                <span>
+                  {formShareWithCommunity
+                    ? 'Guardar y Compartir con la Comunidad'
+                    : 'Guardar Alimento en mi Catálogo'}
+                </span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Sincronización e Importar/Exportar Catálogo Comunitario */}
+      {isExportImportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-sky-500/30 rounded-2xl max-w-lg w-full p-6 space-y-4 my-8 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🌐</span>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Compartir & Respaldar Catálogo Comunitario
+                  </h3>
+                  <p className="text-[11px] text-sky-300">
+                    Sincronización multiusuario, exportación e importación de alimentos creados con IA
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsExportImportModalOpen(false);
+                  setImportStatusMsg(null);
+                }}
+                className="text-slate-400 hover:text-white font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-slate-850 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>📥 Exportar Catálogo</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Descarga un archivo JSON con todos los {communityFoods.length} alimentos compartidos por la comunidad en este dispositivo para transferirlos o compartirlos con amigos.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleExportCommunityJson}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <span>💾</span>
+                  <span>Descargar Archivo JSON Comunitario</span>
+                </button>
+              </div>
+
+              <div className="bg-slate-850 p-4 rounded-xl border border-slate-800 space-y-3">
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>📤 Importar Alimentos Compartidos (JSON)</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Pega aquí el contenido JSON exportado por otro usuario o dispositivo para incorporarlo a tu catálogo de inmediato.
+                </p>
+                <textarea
+                  rows={4}
+                  value={jsonImportInput}
+                  onChange={(e) => setJsonImportInput(e.target.value)}
+                  placeholder='Pegar aquí el JSON (ej. [{"name": "Mango", "per100": {...}}])'
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-sky-500"
+                />
+
+                {importStatusMsg && (
+                  <div className={`p-2.5 rounded-lg text-xs font-semibold text-center ${
+                    importStatusMsg.startsWith('✓')
+                      ? 'bg-emerald-950/60 border border-emerald-500 text-emerald-300'
+                      : 'bg-rose-950/60 border border-rose-500 text-rose-300'
+                  }`}>
+                    {importStatusMsg}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleImportCommunityJson}
+                  disabled={!jsonImportInput.trim()}
+                  className="w-full py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 disabled:opacity-40 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-transform active:scale-95"
+                >
+                  Importar y Unir al Catálogo
+                </button>
+              </div>
             </div>
           </div>
         </div>
