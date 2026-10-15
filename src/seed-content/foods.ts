@@ -57,7 +57,88 @@ export const FOODS: Food[] = [
   f('gelatina', 'Gelatina', 'processed', [99.3, 2, 22.7, 0, 0], [{ label: '150 g', amount: 150 }], { tags: ['usuario', 'peru'] }),
   f('guiso_de_frejoles_pierna_de_pollo', 'Guiso de frejoles + pierna de pollo', 'dishes', [112.9, 9.4, 11, 3.6, 0], [{ label: '1 plato', amount: 450 }], { tags: ['usuario', 'peru'] }),
   f('helado_bakanazo', 'Helado Bakanazo', 'processed', [212.3, 4.4, 21.9, 11.4, 0], [{ label: '114 g', amount: 114 }], { tags: ['usuario', 'peru'] }),
-  f('huevo_frito', 'Huevo frito', 'protein', [214.5, 13.3, 0.7, 17.3, 0], [{ label: '55 g', amount: 55 }], { tags: ['usuario', 'peru'] }),
+  f('huevo_frito', 'Huevo frito', 'protein', [214.5, 13.3, 0.7, 17.3, 0], [{ label: '1 unidad (55g)', amount: 55 }], { tags: ['usuario', 'peru', 'huevo', 'desayuno'] }),
+  f('huevo_cocido_sancochado', 'Huevo cocido / sancochado (huevo duro)', 'protein', [155, 13.0, 1.1, 11.0, 0], [{ label: '1 unidad (50g)', amount: 50 }, { label: '2 unidades (100g)', amount: 100 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'huevo', 'proteina_magra', 'desayuno'],
+    notes: 'Huevo entero hervido. Referencia de proteína de alto valor biológico (PDCAAS 1.0).'
+  }),
+  f('clara_de_huevo_cocida', 'Clara de huevo sancochada / cocida', 'protein', [52, 11.0, 0.7, 0.2, 0], [{ label: '1 clara (33g)', amount: 33 }, { label: '3 claras (100g)', amount: 100 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'fitness', 'huevo', 'proteina_magra', 'desayuno'],
+    notes: 'Proteína pura libre de grasa, ideal para déficits calóricos agresivos.'
+  }),
+  f('huevo_revuelto_con_aceite', 'Huevo revuelto casero', 'protein', [182, 12.5, 1.2, 14.2, 0], [{ label: '2 huevos (100g)', amount: 100 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'huevo', 'desayuno']
+  }),
+  f('huevo_escalfado_poche', 'Huevo escalfado / poché', 'protein', [143, 12.6, 0.8, 9.5, 0], [{ label: '1 unidad (50g)', amount: 50 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'huevo', 'fitness']
+  }),
+  f('tortilla_de_verduras_huevo', 'Tortilla de huevo con verduras', 'dishes', [145, 10.2, 3.8, 9.8, 1.2], [{ label: '1 porción (150g)', amount: 150 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'huevo']
+  }),
+  f('pechuga_pollo_plancha', 'Pechuga de pollo a la plancha', 'protein', [165, 31.0, 0, 3.6, 0], [{ label: '1 filete (150g)', amount: 150 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'pollo', 'proteina_magra', 'fitness']
+  }),
+  f('pollo_al_horno_presa', 'Pollo al horno casero dorado (presa)', 'protein', [185, 24.5, 0, 9.5, 0], [{ label: '1 presa (140g)', amount: 140 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'pollo', 'almuerzo']
+  }),
+  f('carne_res_guisada', 'Carne de res guisada / estofado casero', 'protein', [195, 23.0, 3.0, 10.0, 0.5], [{ label: '1 porción (140g)', amount: 140 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'carne', 'almuerzo']
+  }),
+  f('atun_lata_al_agua', 'Atún en lata en agua (escurrido)', 'protein', [116, 26.0, 0, 1.0, 0], [{ label: '1 lata escurrida (120g)', amount: 120 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'fitness', 'pescado', 'proteina_magra']
+  }),
+  f('atun_lata_en_aceite', 'Atún en lata en aceite (escurrido)', 'protein', [198, 27.0, 0, 10.0, 0], [{ label: '1 lata escurrida (120g)', amount: 120 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'pescado', 'proteina']
+  }),
+  f('zanahoria_sancochada', 'Zanahoria sancochada en bastones', 'vegetables', [35, 0.8, 8.2, 0.2, 2.8], [{ label: '1 porción (100g)', amount: 100 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'verdura'],
+    notes: 'Rica en betacarotenos y fibra soluble.'
+  }),
+  f('vainitas_sancochadas', 'Vainitas verdes sancochadas / salteadas', 'vegetables', [31, 1.8, 7.0, 0.2, 3.4], [{ label: '1 porción (100g)', amount: 100 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'verdura'],
+    notes: 'Aporte de fibra verde y micronutrientes digestivos.'
+  }),
+  f('cebolla_roja_picada', 'Cebolla roja picada / ensalada en pluma', 'vegetables', [40, 1.1, 9.3, 0.1, 1.7], [{ label: '1/2 taza (80g)', amount: 80 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'verdura'],
+    notes: 'Contiene quercetina y compuestos azufrados antiinflamatorios.'
+  }),
+  f('tomate_fresco_rodajas', 'Tomate fresco en rodajas', 'vegetables', [18, 0.9, 3.9, 0.2, 1.2], [{ label: '1 tomate mediano (120g)', amount: 120 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'verdura'],
+    notes: 'Fuente de licopeno antioxidante y potasio.'
+  }),
+  f('ensalada_lechuga_cebolla', 'Ensalada fresca de lechuga con cebolla roja', 'vegetables', [22, 1.2, 4.2, 0.2, 1.8], [{ label: '1 plato de ensalada (120g)', amount: 120 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'verdura', 'ensalada']
+  }),
+  f('brocoli_al_vapor', 'Brócoli al vapor', 'vegetables', [35, 2.8, 7.2, 0.4, 2.6], [{ label: '1 taza (100g)', amount: 100 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'fitness', 'verdura']
+  }),
+  f('lentejas_guisadas_caseras', 'Lentejas guisadas caseras con aderezo', 'carbs', [116, 9.0, 20.0, 0.4, 7.9], [{ label: '1 plato (200g)', amount: 200 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'menestras', 'legumbres']
+  }),
+  f('frijoles_canario_guisados', 'Frejoles canario guisados', 'carbs', [120, 8.5, 21.0, 0.5, 6.5], [{ label: '1 plato (200g)', amount: 200 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'menestras']
+  }),
+  f('arroz_integral_cocido', 'Arroz integral cocido', 'carbs', [112, 2.6, 23.5, 0.9, 1.8], [{ label: '1 taza (150g)', amount: 150 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'fitness', 'carbs']
+  }),
+  f('avena_cocida_casera', 'Avena en hojuelas cocida con canela', 'carbs', [71, 2.5, 12.0, 1.4, 1.7], [{ label: '1 tazón (200g)', amount: 200 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'desayuno', 'fitness', 'carbs']
+  }),
+  f('avena_con_leche_fresca', 'Avena cocida con leche de vaca', 'dishes', [105, 4.8, 15.2, 3.2, 1.4], [{ label: '1 tazón (220g)', amount: 220 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'desayuno', 'peru']
+  }),
+  f('leche_descremada_fresca', 'Leche descremada / light', 'dairy', [35, 3.4, 4.9, 0.1, 0], [{ label: '1 vaso (200ml)', amount: 200 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'fitness', 'dairy'], unit: 'ml'
+  }),
+  f('yogur_griego_natural', 'Yogur griego natural (sin azúcar)', 'dairy', [95, 10.0, 3.6, 4.5, 0], [{ label: '1 pote (150g)', amount: 150 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'fitness', 'proteina_magra', 'dairy']
+  }),
+  f('queso_fresco_mesa', 'Queso fresco pasteurizado de mesa', 'dairy', [180, 16.0, 2.0, 12.0, 0], [{ label: '1 tajada (60g)', amount: 60 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'peru', 'dairy', 'desayuno']
+  }),
+  f('aceite_de_oliva_extra', 'Aceite de oliva extra virgen', 'fats', [884, 0, 0, 100, 0], [{ label: '1 cucharada (12g)', amount: 12 }], {
+    source: 'CENAN-TPCA', tags: ['usuario', 'grasas_saludables', 'fats']
+  }),
   f('humitas', 'Humitas', 'dishes', [153.3, 4.5, 15.3, 8.9, 0], [{ label: '150 g', amount: 150 }], { tags: ['cajamarca', 'celendin', 'peru', 'usuario'] }),
   f('jugo_de_maracuya', 'Jugo de maracuya', 'dishes', [22, 0, 5.6, 0, 0], [{ label: '100 ml', amount: 100 }], { tags: ['cajamarca', 'celendin', 'peru', 'usuario'], unit: 'ml' }),
   f('jugo_de_naranja', 'Jugo de naranja', 'fruits', [50, 0.6, 11.5, 0.1, 2.5], [{ label: '100 ml', amount: 100 }], { tags: ['usuario', 'peru'], unit: 'ml' }),

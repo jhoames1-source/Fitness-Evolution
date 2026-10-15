@@ -1,9 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../app/AppContext';
 import { FOODS } from '../../seed-content/foods';
 import { nutrientsFor } from '../../domain/nutrition/nutrients';
 import { generateWeeklyMenu, WeeklyMenuProposal } from '../../domain/nutrition/generator';
-import { analyzeMealPhoto, PlatePhotoAnalysisResult } from '../../domain/nutrition/photo-analysis';
+import {
+  analyzeMealPhoto,
+  PlatePhotoAnalysisResult,
+  DetectedFoodComponent,
+  recalculatePlateNutrients,
+} from '../../domain/nutrition/photo-analysis';
 import type { FoodLogRecord } from '../../data/local/schema';
 import type { MealSlot } from '../../domain/nutrition/types';
 
@@ -17,6 +22,9 @@ export const NutritionScreen: React.FC = () => {
   const [selectedFoodId, setSelectedFoodId] = useState(FOODS[0]!.id);
   const [amountInput, setAmountInput] = useState('150');
   const [searchFilter, setSearchFilter] = useState('');
+  const [catalogCategory, setCatalogCategory] = useState<
+    'all' | 'popular' | 'protein' | 'carbs' | 'vegetables' | 'dairy' | 'cajamarca'
+  >('popular');
   const [activeTab, setActiveTab] = useState<'today' | 'weekly_plan' | 'sierra_catalog'>('today');
 
   // Estados para subida y análisis con IA de foto del plato de comida
@@ -27,6 +35,11 @@ export const NutritionScreen: React.FC = () => {
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [photoAnalysisResult, setPhotoAnalysisResult] = useState<PlatePhotoAnalysisResult | null>(null);
   const [savePhotoSuccess, setSavePhotoSuccess] = useState(false);
+
+  // Estados para añadir componente manual al plato de foto
+  const [isAddingExtraComponent, setIsAddingExtraComponent] = useState(false);
+  const [extraFoodId, setExtraFoodId] = useState('huevo_cocido_sancochado');
+  const [extraFoodGrams, setExtraFoodGrams] = useState('100');
 
   const [weeklyMenu, setWeeklyMenu] = useState<WeeklyMenuProposal | null>(null);
 
@@ -100,7 +113,64 @@ export const NutritionScreen: React.FC = () => {
       const result = analyzeMealPhoto(photoFile.name, dishDescription);
       setPhotoAnalysisResult(result);
       setIsAnalyzingPhoto(false);
-    }, 1400);
+    }, 1200);
+  };
+
+  // Modificar gramos de un componente detectado en la foto
+  const handleUpdateComponentGrams = (idx: number, newGrams: number) => {
+    if (!photoAnalysisResult) return;
+    const clamped = Math.max(10, Math.min(1000, newGrams));
+    const updated = photoAnalysisResult.components.map((c, i) => {
+      if (i !== idx) return c;
+      const factor = clamped / 100;
+      return {
+        ...c,
+        estimatedGrams: clamped,
+        nutrients: {
+          kcal: Math.round(c.per100g.kcal * factor),
+          proteinG: parseFloat((c.per100g.proteinG * factor).toFixed(1)),
+          carbsG: parseFloat((c.per100g.carbsG * factor).toFixed(1)),
+          fatG: parseFloat((c.per100g.fatG * factor).toFixed(1)),
+          fiberG: parseFloat((c.per100g.fiberG * factor).toFixed(1)),
+        },
+      };
+    });
+    setPhotoAnalysisResult(recalculatePlateNutrients(updated, photoAnalysisResult.suggestedSlot));
+  };
+
+  // Eliminar un componente erróneo detectado en la foto
+  const handleRemoveComponent = (idx: number) => {
+    if (!photoAnalysisResult) return;
+    const updated = photoAnalysisResult.components.filter((_, i) => i !== idx);
+    setPhotoAnalysisResult(recalculatePlateNutrients(updated, photoAnalysisResult.suggestedSlot));
+  };
+
+  // Añadir un componente manual adicional al plato
+  const handleAddExtraComponent = () => {
+    if (!photoAnalysisResult) return;
+    const food = FOODS.find((f) => f.id === extraFoodId) || FOODS[0]!;
+    const grams = parseFloat(extraFoodGrams) || 100;
+    const factor = grams / 100;
+    const newComp: DetectedFoodComponent = {
+      name: food.name,
+      category: food.tags?.includes('cajamarca')
+        ? 'cajamarca_regional'
+        : (food.category as DetectedFoodComponent['category']) || 'protein',
+      estimatedGrams: grams,
+      confidencePct: 100,
+      per100g: food.per100,
+      nutrients: {
+        kcal: Math.round(food.per100.kcal * factor),
+        proteinG: parseFloat((food.per100.proteinG * factor).toFixed(1)),
+        carbsG: parseFloat((food.per100.carbsG * factor).toFixed(1)),
+        fatG: parseFloat((food.per100.fatG * factor).toFixed(1)),
+        fiberG: parseFloat((food.per100.fiberG * factor).toFixed(1)),
+      },
+      visualCue: 'Componente incorporado manualmente por el usuario',
+    };
+    const updated = [...photoAnalysisResult.components, newComp];
+    setPhotoAnalysisResult(recalculatePlateNutrients(updated, photoAnalysisResult.suggestedSlot));
+    setIsAddingExtraComponent(false);
   };
 
   const handleConfirmPhotoAnalysis = async () => {
@@ -113,7 +183,7 @@ export const NutritionScreen: React.FC = () => {
         userId: profile.id,
         date: todayStr,
         slot: photoAnalysisResult.suggestedSlot,
-        foodId: `photo_detected_${comp.name.toLowerCase().replace(/\s+/g, '_')}`,
+        foodId: `photo_detected_${comp.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
         foodName: comp.name,
         amount: comp.estimatedGrams,
         unit: 'g',
@@ -140,9 +210,84 @@ export const NutritionScreen: React.FC = () => {
   const selectedFood = FOODS.find((f) => f.id === selectedFoodId) ?? FOODS[0]!;
   const previewNutrients = nutrientsFor(selectedFood, parseFloat(amountInput) || 0);
 
-  const filteredFoods = FOODS.filter((f) =>
-    f.name.toLowerCase().includes(searchFilter.toLowerCase())
+  // Normalizador para búsqueda insensible a mayúsculas y acentos
+  const normalize = (t: string) =>
+    t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+  // Conjunto de alimentos básicos y frecuentes para orden preferente
+  const POPULAR_FOOD_IDS = useMemo(
+    () =>
+      new Set([
+        'huevo_cocido_sancochado',
+        'huevo_frito',
+        'clara_de_huevo_cocida',
+        'pechuga_pollo_plancha',
+        'pollo_al_horno_presa',
+        'carne_res_guisada',
+        'atun_lata_al_agua',
+        'arroz_cocido',
+        'papa_sancochada',
+        'zanahoria_sancochada',
+        'vainitas_sancochadas',
+        'ensalada_lechuga_cebolla',
+        'avena_cocida_casera',
+        'palta',
+        'quesillo_fresco_celendin',
+        'cuy_frito',
+      ]),
+    []
   );
+
+  // Catálogo inteligente filtrado
+  const filteredFoods = useMemo(() => {
+    let list = FOODS;
+
+    // Filtro por categoría seleccionada
+    if (catalogCategory === 'popular') {
+      list = list.filter((f) => POPULAR_FOOD_IDS.has(f.id) || f.tags?.includes('usuario'));
+    } else if (catalogCategory === 'protein') {
+      list = list.filter(
+        (f) =>
+          f.category === 'protein' ||
+          f.tags?.includes('huevo') ||
+          f.tags?.includes('proteina_magra')
+      );
+    } else if (catalogCategory === 'carbs') {
+      list = list.filter((f) => f.category === 'carbs');
+    } else if (catalogCategory === 'vegetables') {
+      list = list.filter(
+        (f) =>
+          f.category === 'vegetables' ||
+          f.tags?.includes('verdura') ||
+          f.tags?.includes('ensalada')
+      );
+    } else if (catalogCategory === 'dairy') {
+      list = list.filter((f) => f.category === 'dairy');
+    } else if (catalogCategory === 'cajamarca') {
+      list = list.filter((f) => f.tags?.includes('cajamarca') || f.tags?.includes('celendin'));
+    }
+
+    // Búsqueda por texto multi-término
+    if (searchFilter.trim()) {
+      const tokens = normalize(searchFilter).split(/\s+/).filter(Boolean);
+      list = list.filter((f) => {
+        const searchable = normalize(
+          `${f.name} ${f.tags?.join(' ') || ''} ${f.category} ${f.notes || ''}`
+        );
+        return tokens.every((token) => searchable.includes(token));
+      });
+    } else if (catalogCategory === 'all') {
+      // Si está en 'all' y sin búsqueda, mostrar primero los populares y básicos
+      list = [...list].sort((a, b) => {
+        const aPop = POPULAR_FOOD_IDS.has(a.id) ? 1 : 0;
+        const bPop = POPULAR_FOOD_IDS.has(b.id) ? 1 : 0;
+        if (aPop !== bPop) return bPop - aPop;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return list;
+  }, [catalogCategory, searchFilter, POPULAR_FOOD_IDS]);
 
   const totalKcal = foodLogs.reduce((acc, f) => acc + f.nutrients.kcal, 0);
   const totalProt = Math.round(foodLogs.reduce((acc, f) => acc + f.nutrients.proteinG, 0));
@@ -424,68 +569,123 @@ export const NutritionScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Buscador de alimentos con filtro regional Cajamarca */}
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-xs text-slate-300 font-semibold block">Buscar Alimento:</label>
-                <button
-                  type="button"
-                  onClick={() => setSearchFilter(searchFilter === 'cajamarca' ? '' : 'cajamarca')}
-                  className={`text-[10px] px-2 py-0.5 rounded font-bold transition-all ${
-                    searchFilter === 'cajamarca'
-                      ? 'bg-emerald-500 text-slate-950 shadow'
-                      : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-900/50'
-                  }`}
-                >
-                  🏔️ Cajamarca / Celendín
-                </button>
-              </div>
-              <input
-                type="text"
-                placeholder="Ej. Cuy, quesillo, trucha, avena, pollo..."
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-              />
+            {/* Buscador inteligente de alimentos y selector por categoría */}
+            <div className="space-y-2">
+              <label className="text-xs text-slate-300 font-semibold block">Buscar en Catálogo:</label>
 
-              <div className="max-h-44 overflow-y-auto mt-2 space-y-1 bg-slate-950 p-2 rounded-lg border border-slate-800">
-                {filteredFoods.slice(0, 30).map((f) => {
-                  const isRegional = f.tags?.includes('cajamarca');
-                  return (
-                    <button
-                      key={f.id}
-                      onClick={() => setSelectedFoodId(f.id)}
-                      className={`w-full text-left p-1.5 rounded text-xs transition-colors flex justify-between items-center ${
-                        selectedFoodId === f.id
-                          ? 'bg-emerald-500/20 text-emerald-300 font-semibold'
-                          : 'text-slate-300 hover:bg-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        {isRegional && (
-                          <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded border border-amber-500/30">
-                            🏔️ Cajamarca
-                          </span>
-                        )}
-                        <span>{f.name}</span>
-                      </div>
-                      <span className="text-slate-500 text-[10px] font-mono">{f.per100.kcal} kcal/100g</span>
-                    </button>
-                  );
-                })}
+              {/* Pestañas rápidas de categorías */}
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { id: 'popular', label: '🔥 Populares' },
+                  { id: 'protein', label: '🍳 Huevos & Proteína' },
+                  { id: 'carbs', label: '🥔 Tubérculos & Arroz' },
+                  { id: 'vegetables', label: '🥗 Verduras' },
+                  { id: 'cajamarca', label: '🏔️ Cajamarca / Celendín' },
+                  { id: 'dairy', label: '🥛 Lácteos' },
+                  { id: 'all', label: 'Todos' },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setCatalogCategory(cat.id as any)}
+                    className={`text-[10px] px-2 py-1 rounded-lg font-bold transition-all ${
+                      catalogCategory === cat.id
+                        ? 'bg-emerald-500 text-slate-950 shadow-md font-extrabold'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input de búsqueda multi-término */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Ej. Huevo cocido, frito, papa, pollo, cuy, atún..."
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-3 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+                {searchFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchFilter('')}
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-white text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Lista scrollable de resultados */}
+              <div className="max-h-48 overflow-y-auto space-y-1 bg-slate-950 p-2 rounded-xl border border-slate-800">
+                {filteredFoods.length === 0 ? (
+                  <div className="text-center py-4 text-xs text-slate-500">
+                    No se encontraron alimentos para &quot;{searchFilter}&quot;. Prueba con otro término.
+                  </div>
+                ) : (
+                  filteredFoods.slice(0, 40).map((f) => {
+                    const isRegional = f.tags?.includes('cajamarca') || f.tags?.includes('celendin');
+                    const isSelected = selectedFoodId === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setSelectedFoodId(f.id)}
+                        className={`w-full text-left p-2 rounded-lg text-xs transition-colors flex justify-between items-center ${
+                          isSelected
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold'
+                            : 'text-slate-300 hover:bg-slate-850 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0 pr-2">
+                          {isRegional && (
+                            <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30 whitespace-nowrap">
+                              🏔️ Andino
+                            </span>
+                          )}
+                          <span className="truncate">{f.name}</span>
+                        </div>
+                        <div className="text-right text-[10px] text-slate-400 whitespace-nowrap font-mono">
+                          <span className="text-emerald-400 font-bold">{f.per100.kcal} kcal</span> •{' '}
+                          <span>{f.per100.proteinG}g P</span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
 
-            {/* Cantidad */}
+            {/* Cantidad con atajos rápidos */}
             <div>
-              <label className="text-xs text-slate-300 font-semibold block mb-1">
-                Cantidad ({selectedFood.unit}):
-              </label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs text-slate-300 font-semibold">
+                  Cantidad ({selectedFood.unit}):
+                </label>
+                <div className="flex gap-1">
+                  {['50', '100', '150', '200', '250'].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setAmountInput(g)}
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono transition-colors ${
+                        amountInput === g
+                          ? 'bg-emerald-500 text-slate-950 font-bold'
+                          : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                      }`}
+                    >
+                      {g}g
+                    </button>
+                  ))}
+                </div>
+              </div>
               <input
                 type="number"
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono"
               />
             </div>
 
@@ -611,11 +811,12 @@ export const NutritionScreen: React.FC = () => {
               )}
             </div>
 
-            {/* Resultado del análisis computacional de la foto */}
+            {/* Resultado del análisis computacional de la foto con edición interactiva */}
             {photoAnalysisResult && (
               <div className="space-y-4 pt-2 border-t border-slate-800">
                 <div className="bg-slate-850 p-4 rounded-xl border border-purple-500/30 space-y-3">
-                  <div className="flex justify-between items-start">
+                  {/* Título y Selector de Momento de Comida */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
                     <div>
                       <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
                         {photoAnalysisResult.plateTitle}
@@ -624,15 +825,38 @@ export const NutritionScreen: React.FC = () => {
                         {photoAnalysisResult.overallDescription}
                       </p>
                     </div>
-                    <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-bold uppercase">
-                      {photoAnalysisResult.suggestedSlot}
-                    </span>
+
+                    <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                      <span className="text-[10px] text-slate-400 font-semibold px-1">Registrar en:</span>
+                      {(['breakfast', 'lunch', 'dinner', 'snack'] as MealSlot[]).map((slot) => (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() =>
+                            setPhotoAnalysisResult({ ...photoAnalysisResult, suggestedSlot: slot })
+                          }
+                          className={`text-[10px] px-2 py-0.5 rounded font-bold capitalize transition-all ${
+                            photoAnalysisResult.suggestedSlot === slot
+                              ? 'bg-purple-600 text-white shadow'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {slot === 'breakfast'
+                            ? 'Desayuno'
+                            : slot === 'lunch'
+                            ? 'Almuerzo'
+                            : slot === 'dinner'
+                            ? 'Cena'
+                            : 'Snack'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* Resumen de Macros Detectados */}
-                  <div className="grid grid-cols-4 gap-2 text-center">
+                  {/* Resumen de Macros Detectados en Vivo */}
+                  <div className="grid grid-cols-5 gap-1.5 text-center">
                     <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                      <span className="text-[10px] text-slate-400 block">Calorías</span>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Calorías</span>
                       <span className="text-base font-extrabold text-emerald-400">
                         {photoAnalysisResult.totalNutrients.kcal}
                       </span>
@@ -655,34 +879,150 @@ export const NutritionScreen: React.FC = () => {
                         {photoAnalysisResult.totalNutrients.fatG}g
                       </span>
                     </div>
+                    <div className="bg-slate-900 p-2 rounded-lg border border-teal-500/20">
+                      <span className="text-[10px] text-teal-400 block font-semibold">Fibra</span>
+                      <span className="text-base font-extrabold text-teal-300">
+                        {photoAnalysisResult.totalNutrients.fiberG}g
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Alimentos individuales detectados */}
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-bold text-slate-300 uppercase">
-                      Componentes identificados en plato:
+                  {/* Componentes individuales detectados con edición en tiempo real */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">
+                        Componentes del plato ({photoAnalysisResult.components.length}):
+                      </div>
+                      <span className="text-[10px] text-purple-300">
+                        Toca + / - o edita los gramos para ajustar tu porción
+                      </span>
                     </div>
-                    <div className="space-y-1">
+
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                       {photoAnalysisResult.components.map((c, cIdx) => (
                         <div
                           key={cIdx}
-                          className="bg-slate-900/80 p-2 rounded-lg border border-slate-800 flex justify-between items-center text-xs"
+                          className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800/90 space-y-1.5 hover:border-slate-700 transition-all"
                         >
-                          <div>
-                            <span className="font-semibold text-white">{c.name}</span>
-                            <span className="text-slate-400 ml-2">~{c.estimatedGrams}g</span>
-                            <span className="text-[10px] text-emerald-400 ml-2 font-mono">
-                              ({c.confidencePct}% conf.)
-                            </span>
-                            <div className="text-[10px] text-slate-500">{c.visualCue}</div>
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-white text-xs">{c.name}</span>
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 uppercase font-mono">
+                                  {c.category}
+                                </span>
+                                <span className="text-[9px] text-emerald-400 font-mono">
+                                  ({c.confidencePct}% conf.)
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{c.visualCue}</p>
+                            </div>
+
+                            {/* Botón para eliminar componente erróneo */}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveComponent(cIdx)}
+                              className="text-slate-500 hover:text-rose-400 p-1 text-sm transition-colors rounded hover:bg-slate-800"
+                              title="Eliminar este alimento del plato"
+                            >
+                              🗑️
+                            </button>
                           </div>
-                          <div className="text-right text-[11px] text-slate-300">
-                            <span className="text-emerald-400 font-bold">{c.nutrients.kcal} kcal</span> •{' '}
-                            <span>{c.nutrients.proteinG}g P</span> • <span>{c.nutrients.carbsG}g C</span>
+
+                          {/* Controles de ajuste de gramos y macros en vivo */}
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-xs">
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-400">Porción:</span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateComponentGrams(cIdx, c.estimatedGrams - 25)}
+                                className="w-5 h-5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded flex items-center justify-center text-xs active:scale-95"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                value={c.estimatedGrams}
+                                onChange={(e) =>
+                                  handleUpdateComponentGrams(cIdx, parseFloat(e.target.value) || 0)
+                                }
+                                className="w-14 bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-center text-xs text-white font-mono"
+                              />
+                              <span className="text-[10px] text-slate-400">g</span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateComponentGrams(cIdx, c.estimatedGrams + 25)}
+                                className="w-5 h-5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded flex items-center justify-center text-xs active:scale-95"
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            <div className="text-[11px] text-slate-300 font-mono">
+                              <span className="text-emerald-400 font-bold">{c.nutrients.kcal} kcal</span> •{' '}
+                              <span className="text-cyan-300">{c.nutrients.proteinG}g P</span> •{' '}
+                              <span className="text-amber-300">{c.nutrients.carbsG}g C</span> •{' '}
+                              <span className="text-rose-300">{c.nutrients.fatG}g G</span>
+                            </div>
                           </div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Botón y panel para añadir alimento extra que no fue detectado */}
+                    {isAddingExtraComponent ? (
+                      <div className="bg-slate-900 p-3 rounded-xl border border-purple-500/40 space-y-2 mt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-purple-300">Añadir Componente Extra al Plato:</span>
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingExtraComponent(false)}
+                            className="text-slate-400 hover:text-white text-xs font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <select
+                            value={extraFoodId}
+                            onChange={(e) => setExtraFoodId(e.target.value)}
+                            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                          >
+                            {FOODS.map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.name} ({f.per100.kcal} kcal/100g)
+                              </option>
+                            ))}
+                          </select>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              value={extraFoodGrams}
+                              onChange={(e) => setExtraFoodGrams(e.target.value)}
+                              className="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white text-center font-mono"
+                              placeholder="g"
+                            />
+                            <span className="text-xs text-slate-400">g</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddExtraComponent}
+                          className="w-full py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition-colors"
+                        >
+                          ✓ Añadir al Plato y Recalcular Macros
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingExtraComponent(true)}
+                        className="w-full py-1.5 bg-slate-800 hover:bg-slate-750 text-purple-300 hover:text-purple-200 border border-purple-500/30 border-dashed rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <span>➕</span>
+                        <span>¿Falta algún alimento? Toca aquí para agregarlo</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Veredicto de especialista y recomendaciones */}
@@ -709,9 +1049,9 @@ export const NutritionScreen: React.FC = () => {
                   <div className="flex gap-2">
                     <button
                       onClick={handleConfirmPhotoAnalysis}
-                      className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-transform active:scale-95"
+                      className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition-transform active:scale-95"
                     >
-                      ✓ Confirmar e Incorporar a Macros de Hoy
+                      ✓ Confirmar e Incorporar ({photoAnalysisResult.totalNutrients.kcal} kcal • {photoAnalysisResult.totalNutrients.proteinG}g Prot)
                     </button>
                     <button
                       onClick={() => setPhotoAnalysisResult(null)}
