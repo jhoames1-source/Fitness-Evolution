@@ -4,13 +4,15 @@ import { openUserDb, UserDb } from '../data/local/db';
 import { seedDemoUser } from '../data/local/seed';
 import type { ProfileRecord, GoalRecord, PreferenceRecord } from '../data/local/schema';
 
-export type NavTab = 'today' | 'plan' | 'training' | 'exercises' | 'nutrition' | 'progress' | 'profile';
+export type NavTab = 'today' | 'plan' | 'training' | 'exercises' | 'nutrition' | 'progress' | 'profile' | 'timer';
 
 interface AppContextValue {
   activeUserId: string;
   setActiveUserId: (id: string) => void;
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
+  isMayaOpen: boolean;
+  setIsMayaOpen: (open: boolean) => void;
   theme: 'dark' | 'light';
   setTheme: (t: 'dark' | 'light') => void;
   toggleTheme: () => void;
@@ -29,6 +31,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return localStorage.getItem('fe_active_user_id') || DEMO_USER_1_ID;
   });
   const [activeTab, setActiveTab] = useState<NavTab>('today');
+  const [isMayaOpen, setIsMayaOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -91,6 +94,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveUserId,
         activeTab,
         setActiveTab,
+        isMayaOpen,
+        setIsMayaOpen,
         theme,
         setTheme,
         toggleTheme,

@@ -7,15 +7,18 @@ import { ExercisesScreen } from '../features/training/ExercisesScreen';
 import { NutritionScreen } from '../features/nutrition/NutritionScreen';
 import { ProgressScreen } from '../features/progress/ProgressScreen';
 import { ProfileScreen } from '../features/profile/ProfileScreen';
+import { TacticalTimerScreen } from '../features/timer/TacticalTimerScreen';
+import { MayaAssistantModal } from '../features/maya/MayaAssistantModal';
 
 export const AppLayout: React.FC = () => {
-  const { activeTab, setActiveTab, profile, theme, toggleTheme, isLoading } = useApp();
+  const { activeTab, setActiveTab, isMayaOpen, setIsMayaOpen, profile, theme, toggleTheme, isLoading } = useApp();
 
   const navItems: { tab: NavTab; label: string; icon: string }[] = [
     { tab: 'today', label: 'Inicio', icon: '🏠' },
     { tab: 'plan', label: 'Plan', icon: '📋' },
     { tab: 'training', label: 'Entreno', icon: '🏋️' },
     { tab: 'exercises', label: 'Ejercicios', icon: '📚' },
+    { tab: 'timer', label: 'Timers', icon: '⏱️' },
     { tab: 'nutrition', label: 'Nutrición', icon: '🥗' },
     { tab: 'progress', label: 'Progreso', icon: '📈' },
     { tab: 'profile', label: 'Perfil', icon: '👤' },
@@ -117,25 +120,42 @@ export const AppLayout: React.FC = () => {
         {activeTab === 'plan' && <PlanScreen />}
         {activeTab === 'training' && <TrainingScreen />}
         {activeTab === 'exercises' && <ExercisesScreen />}
+        {activeTab === 'timer' && <TacticalTimerScreen />}
         {activeTab === 'nutrition' && <NutritionScreen />}
         {activeTab === 'progress' && <ProgressScreen />}
         {activeTab === 'profile' && <ProfileScreen />}
       </main>
 
-      {/* 3. BARRA DE NAVEGACIÓN INFERIOR MÓVIL (Regla 59: accesible a una mano) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5 flex justify-around items-center">
+      {/* 3. BOTÓN FLOTANTE HUD MAYA (Acceso táctico global) */}
+      <button
+        onClick={() => setIsMayaOpen(true)}
+        className="fixed bottom-20 md:bottom-8 right-5 z-40 flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-mono font-bold text-xs rounded-2xl shadow-2xl shadow-emerald-950/80 border border-emerald-400/50 transition-all hover:scale-105 active:scale-95 group"
+        title="Abrir Asistente Táctico Maya"
+      >
+        <span className="relative flex h-3 w-3">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+        </span>
+        <span className="tracking-wider">MAYA AI</span>
+      </button>
+
+      {/* Modal interactivo de Maya */}
+      <MayaAssistantModal isOpen={isMayaOpen} onClose={() => setIsMayaOpen(false)} />
+
+      {/* 4. BARRA DE NAVEGACIÓN INFERIOR MÓVIL (Accesible a una mano) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-1 py-1 flex justify-around items-center">
         {navItems.map((item) => {
           const isActive = activeTab === item.tab;
           return (
             <button
               key={item.tab}
               onClick={() => setActiveTab(item.tab)}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all ${
+              className={`flex flex-col items-center justify-center py-1 px-1.5 rounded-xl transition-all ${
                 isActive ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <span className="text-xl mb-0.5">{item.icon}</span>
-              <span className="text-[10px] tracking-tight">{item.label}</span>
+              <span className="text-lg mb-0.5">{item.icon}</span>
+              <span className="text-[9px] tracking-tight">{item.label}</span>
             </button>
           );
         })}

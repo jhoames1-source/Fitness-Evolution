@@ -15,16 +15,18 @@
   }
 
   .dark {
-    --bg-primary: #090d16;
-    --bg-surface: #0f172a;
-    --bg-card: #131d31;
-    --border-color: #1e293b;
-    --text-primary: #f8fafc;
-    --text-muted: #94a3b8;
+    --bg-primary: #0f110f;
+    --bg-surface: #161916;
+    --bg-card: #1d221d;
+    --border-color: #293229;
+    --text-primary: #f3f4f6;
+    --text-muted: #8da38d;
     --accent-emerald: #34d399;
     --accent-cyan: #22d3ee;
     --accent-amber: #fbbf24;
     --accent-rose: #fb7185;
+    --accent-olive: #4b5e4b;
+    --accent-sage: #8da38d;
   }
 
   body {
@@ -33,5 +35,21 @@
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     min-height: 100vh;
     overflow-x: hidden;
+  }
+
+  /* Scrollbar Táctico Refinado */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0f110f;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #333d33;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4b5e4b;
   }
 }

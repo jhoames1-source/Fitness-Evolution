@@ -5,7 +5,7 @@ import { generateSmartAlerts } from '../../domain/alerts/engine';
 import { waterTargetMl } from '../../domain/calc/energy';
 
 export const TodayDashboard: React.FC = () => {
-  const { profile, goal, db, setActiveTab } = useApp();
+  const { profile, goal, db, setActiveTab, setIsMayaOpen } = useApp();
   const todayStr = new Date().toISOString().slice(0, 10);
 
   const [waterLogs, setWaterLogs] = useState<WaterLogRecord[]>([]);
@@ -349,25 +349,37 @@ export const TodayDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 5. Acciones Rápidas */}
-      <div className="flex flex-wrap gap-3">
+      {/* 5. Acciones Rápidas Tácticas */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <button
+          onClick={() => setIsMayaOpen(true)}
+          className="py-3 px-4 bg-gradient-to-r from-emerald-950 to-teal-950 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-950/40"
+        >
+          <span>🤖</span> Consultar a Maya AI
+        </button>
+        <button
+          onClick={() => setActiveTab('timer')}
+          className="py-3 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
+        >
+          <span>⏱️</span> Temporizadores / HIIT
+        </button>
         <button
           onClick={() => setActiveTab('nutrition')}
-          className="flex-1 min-w-[140px] py-3 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
+          className="py-3 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
         >
           <span>🥗</span> + Registrar Comida
         </button>
         <button
           onClick={() => setActiveTab('progress')}
-          className="flex-1 min-w-[140px] py-3 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
+          className="py-3 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
         >
           <span>⚖️</span> + Registrar Peso
         </button>
         <button
-          onClick={() => setActiveTab('progress')}
-          className="flex-1 min-w-[140px] py-3 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
+          onClick={() => setActiveTab('training')}
+          className="py-3 px-4 bg-slate-900 border border-slate-800 hover:border-slate-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
         >
-          <span>📏</span> + Registrar Cintura
+          <span>🎖️</span> Desafío Calistenia
         </button>
       </div>
     </div>
