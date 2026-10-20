@@ -809,6 +809,172 @@ export const EXERCISES: Exercise[] = [
     commonErrors: ['Levantar el talón del suelo'],
     alternatives: ['bulgarian_split_squat', 'walking_lunge'],
   }),
+
+  // ======================= DESAFÍO 21 CALISTENIA MILITAR (EXTRAÍDO DE DESAFÍO 21)
+  e('front_plank', 'Front Plank (Plancha Frontal Isométrica)', 'core', ['abs', 'shoulders'], ['bodyweight'], 'anti_extension', {
+    level: 'beginner', reps: [30, 60], timed: true, restSec: 45, jointStress: 1,
+    technique: ['Codos bajo los hombros en 90°', 'Retroversión pélvica activa apretando glúteos y ombligo hacia la columna'],
+    commonErrors: ['Dejar caer la cadera hacia el piso', 'Elevar los glúteos formando una V'],
+    alternatives: ['plank', 'dead_bug', 'hollow_body_hold'],
+  }),
+  e('alternating_reverse_lunge', 'Zancadas Inversas Alternas', 'quads', ['glutes', 'hamstrings'], ['bodyweight'], 'squat', {
+    level: 'beginner', reps: [10, 16], restSec: 45, jointStress: 1,
+    technique: ['Paso largo hacia atrás amortiguando con la punta del pie', 'Descender hasta que ambas rodillas queden a 90°'],
+    commonErrors: ['Golpear la rodilla trasera contra el suelo'],
+    alternatives: ['walking_lunge', 'bodyweight_squat'],
+  }),
+  e('dead_hang', 'Dead Hang (Suspensión Estricta en Barra)', 'forearms', ['back', 'shoulders'], ['pullup_bar'], 'vertical_pull', {
+    level: 'beginner', reps: [20, 45], timed: true, restSec: 60, jointStress: 1,
+    technique: ['Agarre en pronación al ancho de hombros', 'Dejar colgar el cuerpo permitiendo la descompresión espinal con escapulas activas'],
+    commonErrors: ['Aguantar la respiración', 'Balancear el cuerpo'],
+    alternatives: ['inverted_row', 'pull_up'],
+  }),
+  e('high_knees', 'High Knees (Elevación de Rodillas en el Sitio)', 'cardio', ['quads', 'abs'], ['bodyweight'], 'cardio_hiit', {
+    level: 'beginner', reps: [30, 45], timed: true, restSec: 40, jointStress: 2,
+    technique: ['Elevar rodillas alternativamente a la altura de la cadera', 'Mantener ritmo constante apoyando únicamente el metatarso'],
+    commonErrors: ['Inclinarse hacia atrás'],
+    alternatives: ['jumping_jacks', 'burpee'],
+  }),
+  e('jumping_jacks', 'Jumping Jacks (Polichinelas Militares)', 'cardio', ['calves', 'shoulders'], ['bodyweight'], 'cardio_hiit', {
+    level: 'beginner', reps: [30, 60], timed: true, restSec: 40, jointStress: 1,
+    technique: ['Salto coordinado abriendo piernas y juntando palmas sobre la cabeza', 'Aterrizaje suave con rodillas ligeramente flexionadas'],
+    commonErrors: ['Aterrizar con las piernas rígidas'],
+    alternatives: ['high_knees', 'jump_squat'],
+  }),
+  e('jump_squat', 'Jump Squats (Sentadillas Pliométricas Militares)', 'quads', ['glutes', 'calves'], ['bodyweight'], 'squat', {
+    level: 'intermediate', reps: [10, 15], restSec: 50, jointStress: 2,
+    technique: ['Sentadilla a 90° seguida de salto explosivo vertical', 'Absorber el impacto flexionando rodillas inmediatamente al caer'],
+    commonErrors: ['Impactar fuerte con los talones'],
+    alternatives: ['bodyweight_squat', 'alternating_reverse_lunge'],
+  }),
+  e('walkout_to_plank', 'Walkout to Plank (Caminata de Manos a Plancha)', 'core', ['hamstrings', 'shoulders'], ['bodyweight'], 'anti_extension', {
+    level: 'beginner', reps: [8, 12], restSec: 45, jointStress: 1,
+    technique: ['Desde de pie con piernas estiradas, apoyar manos y caminar hacia adelante hasta la plancha alta', 'Pausar 1 segundo y regresar caminando con las manos'],
+    commonErrors: ['Flexionar excesivamente las rodillas al inicio'],
+    alternatives: ['front_plank', 'plank_to_push_up'],
+  }),
+  e('mountain_climbers', 'Mountain Climbers (Escaladores de Combate)', 'core', ['cardio', 'shoulders'], ['bodyweight'], 'cardio_hiit', {
+    level: 'beginner', reps: [20, 30], timed: true, restSec: 40, jointStress: 1,
+    technique: ['En posición de plancha alta, llevar rodillas alternadamente hacia el pecho con ritmo continuo', 'Mantener la cadera baja alineada con los hombros'],
+    commonErrors: ['Elevar los glúteos en exceso durante el ritmo'],
+    alternatives: ['high_knees', 'front_plank'],
+  }),
+  e('wall_sit', 'Wall Sit (Sentadilla Isométrica contra Pared)', 'quads', ['glutes'], ['bodyweight'], 'squat', {
+    level: 'beginner', reps: [30, 60], timed: true, restSec: 45, jointStress: 1,
+    technique: ['Espalda totalmente plana contra la pared', 'Muslos paralelos al suelo a 90° con rodillas sobre los talones'],
+    commonErrors: ['Apoyar las manos sobre los muslos para restar carga'],
+    alternatives: ['bodyweight_squat', 'front_plank'],
+  }),
+  e('bird_dog', 'Bird Dog (Estabilidad Cruzada Contralateral)', 'core', ['glutes', 'back'], ['bodyweight'], 'anti_rotation', {
+    level: 'beginner', reps: [10, 15], restSec: 35, jointStress: 1,
+    technique: ['En cuatro puntos de apoyo, extender brazo derecho y pierna izquierda al unísono paralelos al piso', 'Mantener columna neutra sin rotar la pelvis'],
+    commonErrors: ['Arquear la zona lumbar'],
+    alternatives: ['dead_bug', 'front_plank'],
+  }),
+  e('hollow_body_hold', 'Hollow Body Hold (Bloqueo Gimnástico Abdominal)', 'abs', ['core'], ['bodyweight'], 'anti_extension', {
+    level: 'intermediate', reps: [20, 40], timed: true, restSec: 45, jointStress: 1,
+    technique: ['Boca arriba, presionar la zona lumbar contra el suelo sin hueco', 'Elevar piernas y omóplatos unos centímetros formando un arco tenso'],
+    commonErrors: ['Despegar la zona lumbar del suelo'],
+    alternatives: ['front_plank', 'dead_bug'],
+  }),
+  e('assisted_bulgarian_split_squat', 'Sentadilla Búlgara Asistida', 'quads', ['glutes', 'hamstrings'], ['bodyweight', 'bench'], 'squat', {
+    level: 'beginner', reps: [8, 12], restSec: 60, jointStress: 1,
+    technique: ['Empeine trasero sobre banco o silla, torso ligeramente inclinado al frente', 'Descenso vertical controlado hasta 90° de la pierna delantera'],
+    commonErrors: ['Colocar el pie delantero demasiado cerca del banco'],
+    alternatives: ['alternating_reverse_lunge', 'bodyweight_squat'],
+  }),
+  e('plank_with_arm_reach', 'Plancha con Alcance de Brazo Unilateral', 'core', ['shoulders', 'abs'], ['bodyweight'], 'anti_rotation', {
+    level: 'intermediate', reps: [10, 14], restSec: 45, jointStress: 1,
+    technique: ['Desde plancha sobre antebrazos, extender un brazo hacia adelante sin balancear la cadera', 'Pausar 1s y alternar'],
+    commonErrors: ['Girar la cadera de lado a lado'],
+    alternatives: ['front_plank', 'shoulder_tap_plank'],
+  }),
+  e('burpee', 'Burpee Militar Clásico', 'cardio', ['chest', 'quads', 'core'], ['bodyweight'], 'cardio_hiit', {
+    level: 'intermediate', reps: [10, 15], restSec: 60, jointStress: 2,
+    technique: ['Desde de pie, agacharse, apoyar manos y lanzar piernas atrás a plancha', 'Ejecutar flexión de pecho, recoger piernas de un salto y saltar extendiendo brazos'],
+    commonErrors: ['Dejar caer la cadera al lanzar los pies atrás'],
+    alternatives: ['push_up', 'jump_squat'],
+  }),
+  e('negative_pull_up', 'Dominada Negativa Excéntrica Controlada', 'back', ['biceps', 'forearms'], ['pullup_bar'], 'vertical_pull', {
+    level: 'beginner', reps: [4, 6], restSec: 75, jointStress: 2,
+    technique: ['Subir a la barra con un salto o escalón hasta barbilla sobre barra', 'Descender de forma ultra lenta durante 3 a 5 segundos completos hasta extensión total'],
+    commonErrors: ['Caer sin frenar la bajada excéntrica'],
+    alternatives: ['inverted_row', 'dead_hang'],
+  }),
+  e('plank_to_push_up', 'Plank to Push-Up (Plancha Dinámica a Flexión)', 'chest', ['triceps', 'core'], ['bodyweight'], 'horizontal_push', {
+    level: 'intermediate', reps: [8, 12], restSec: 50, jointStress: 2,
+    technique: ['Desde plancha de antebrazos, apoyar una mano y luego la otra para subir a plancha alta', 'Bajar de nuevo a antebrazos controlando el balanceo pélvico'],
+    commonErrors: ['Balancear exageradamente la cadera'],
+    alternatives: ['push_up', 'front_plank'],
+  }),
+  e('lateral_step_march', 'Marcha Lateral Táctica en Guardia', 'glutes', ['adductors', 'cardio'], ['bodyweight'], 'hip_adduction', {
+    level: 'beginner', reps: [20, 30], restSec: 40, jointStress: 1,
+    technique: ['Posición de media sentadilla en guardia táctica', 'Desplazamiento lateral paso a paso manteniendo tensión continua en abductores'],
+    commonErrors: ['Ponerse de pie y perder la flexión de rodillas'],
+    alternatives: ['bodyweight_squat', 'alternating_reverse_lunge'],
+  }),
+  e('superman', 'Superman (Extensión Espinal en Suelo)', 'back', ['glutes'], ['bodyweight'], 'hip_extension', {
+    level: 'beginner', reps: [12, 15], restSec: 40, jointStress: 1,
+    technique: ['Boca abajo en el suelo, extender brazos al frente y piernas atrás', 'Elevar pecho y muslos simultáneamente apretando glúteos y erectores espinales'],
+    commonErrors: ['Hiperextender bruscamente el cuello'],
+    alternatives: ['bird_dog', 'glute_bridge'],
+  }),
+  e('assisted_pistol_squat', 'Pistol Squat Asistido (Sentadilla a una Pierna)', 'quads', ['glutes', 'core'], ['bodyweight'], 'squat', {
+    level: 'intermediate', reps: [6, 10], restSec: 60, jointStress: 2,
+    technique: ['Sujetándose de una barra, marco o pared, bajar sobre una pierna con la otra extendida al frente', 'Empujar con el talón de apoyo para subir'],
+    commonErrors: ['Colapsar la rodilla hacia adentro'],
+    alternatives: ['assisted_bulgarian_split_squat', 'bodyweight_squat'],
+  }),
+  e('shoulder_tap_plank', 'Shoulder Tap Plank (Plancha con Toques de Hombro)', 'core', ['shoulders', 'abs'], ['bodyweight'], 'anti_rotation', {
+    level: 'beginner', reps: [16, 24], restSec: 45, jointStress: 1,
+    technique: ['En posición de flexión con pies ligeramente separados para mayor base', 'Tocar el hombro opuesto con una mano minimizando la torsión de la cadera'],
+    commonErrors: ['Rotar la pelvis de lado a lado'],
+    alternatives: ['front_plank', 'plank_with_arm_reach'],
+  }),
+
+  // ======================= EQUIPAMIENTO ESPECIALIZADO GYM FITNESS TOTAL (KETTLEBELL / BANDAS / TRX / GYM)
+  e('kettlebell_swing', 'Kettlebell Russian Swing (Balanceo Ruso con Pesa Rusa)', 'hamstrings', ['glutes', 'core', 'back'], ['kettlebell'], 'hip_hinge', {
+    level: 'intermediate', reps: [15, 20], restSec: 60, jointStress: 2,
+    technique: ['Bisagra de cadera explosiva, la fuerza proviene de los glúteos e isquiotibiales, no de los brazos', 'Elevar la pesa rusa hasta la altura del pecho'],
+    commonErrors: ['Hacer una sentadilla en lugar de bisagra de cadera', 'Arquear la espalda lumbar'],
+    alternatives: ['dumbbell_romanian_deadlift', 'glute_bridge'],
+  }),
+  e('kettlebell_goblet_squat', 'Sentadilla Goblet con Kettlebell', 'quads', ['glutes', 'core'], ['kettlebell'], 'squat', {
+    level: 'beginner', reps: [10, 15], restSec: 60, jointStress: 1,
+    technique: ['Sujetar la pesa rusa pegada al pecho por los cuernos', 'Descender con la espalda erguida abriendo las rodillas con los codos'],
+    commonErrors: ['Inclinar el torso excesivamente hacia adelante'],
+    alternatives: ['bodyweight_squat', 'smith_squat'],
+  }),
+  e('kettlebell_clean_press', 'Kettlebell Clean and Press (Cargada y Press Militar)', 'shoulders', ['triceps', 'hamstrings', 'core'], ['kettlebell'], 'vertical_push', {
+    level: 'advanced', reps: [8, 10], restSec: 75, jointStress: 2,
+    technique: ['Desde el suelo, balanceo explosivo a posición de rack en el pecho', 'Press militar vertical estricto bloqueando codo arriba'],
+    commonErrors: ['Golpear el antebrazo con la campana de la pesa al cargar'],
+    alternatives: ['dumbbell_arnold_press', 'pike_push_up'],
+  }),
+  e('band_face_pull', 'Face Pull con Banda Elástica', 'shoulders', ['back'], ['band'], 'rear_delt', {
+    level: 'beginner', reps: [15, 20], restSec: 45, jointStress: 1,
+    technique: ['Banda anclada a la altura de la vista', 'Tirar hacia la nariz separando las manos y rotando externamente los hombros'],
+    commonErrors: ['Bajar los codos por debajo de la línea de los hombros'],
+    alternatives: ['dumbbell_rear_delt_fly', 'inverted_row'],
+  }),
+  e('band_biceps_curl', 'Curl de Bíceps con Banda Elástica', 'biceps', ['forearms'], ['band'], 'elbow_flexion', {
+    level: 'beginner', reps: [15, 20], restSec: 45, jointStress: 1,
+    technique: ['Pisar la banda al centro, codos pegados a las costillas', 'Flexionar codos sintiendo máxima tensión pico en la parte superior'],
+    commonErrors: ['Balancear el torso hacia atrás'],
+    alternatives: ['barbell_curl', 'dumbbell_curl'],
+  }),
+  e('trx_suspension_row', 'Remo en Suspensión TRX', 'back', ['biceps', 'core'], ['bodyweight'], 'horizontal_pull', {
+    level: 'beginner', reps: [10, 15], restSec: 60, jointStress: 1,
+    technique: ['Cuerpo en línea recta sostenido por las correas TRX', 'Tirar del pecho hacia los agarres retrayendo escápulas'],
+    commonErrors: ['Dejar caer la cadera rompiendo la línea recta'],
+    alternatives: ['inverted_row', 'lat_pulldown'],
+  }),
+  e('dumbbell_arnold_press', 'Press Arnold con Mancuernas', 'shoulders', ['triceps'], ['dumbbell'], 'vertical_push', {
+    level: 'intermediate', reps: [10, 12], restSec: 60, jointStress: 2,
+    technique: ['Inicio con palmas mirando hacia la cara', 'Rotar simultáneamente 180° las muñecas mientras se empuja hacia arriba'],
+    commonErrors: ['Empujar sin completar la rotación suave'],
+    alternatives: ['dumbbell_shoulder_press', 'military_press'],
+  }),
 ];
 
 export const EXERCISE_BY_ID: ReadonlyMap<string, Exercise> = new Map(EXERCISES.map((x) => [x.id, x]));

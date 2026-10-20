@@ -35,8 +35,12 @@ export const TrainingScreen: React.FC = () => {
   const userDays = profile?.trainingDaysPerWeek ?? 6;
 
   // Sincronización inteligente de días según el perfil del usuario (IA adaptativa)
-  // Si el usuario selecciona 3, 4, 5 días, adaptamos la rutina para presentar exactamente los días de entrenamiento configurados + descanso.
+  // Si es Calistenia Militar (Desafío 21), mostramos los 21 días completos operativos sin recortes.
   const activeDays: RoutineDay[] = React.useMemo(() => {
+    if (viewMode === 'military') {
+      return MILITARY_CALISTHENICS_ROUTINE.days;
+    }
+
     const nonRestDays = baseRoutine.days.filter((d) => !d.isRest);
     const restDay = baseRoutine.days.find((d) => d.isRest) ?? {
       weekday: 7 as const,
@@ -57,7 +61,7 @@ export const TrainingScreen: React.FC = () => {
     }));
 
     return [...selectedDays, { ...restDay, weekday: (userDays + 1) as any }];
-  }, [baseRoutine, userDays]);
+  }, [baseRoutine, userDays, viewMode]);
 
   const currentDay: RoutineDay = (activeDays[selectedDayIdx] ?? activeDays[0])!;
 
@@ -205,7 +209,7 @@ export const TrainingScreen: React.FC = () => {
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
             {activeDays.map((day, idx) => (
               <button
-                key={day.weekday}
+                key={idx}
                 onClick={() => setSelectedDayIdx(idx)}
                 className={`flex-shrink-0 px-4 py-2.5 rounded-xl border text-xs font-medium transition-all ${
                   selectedDayIdx === idx
@@ -213,8 +217,12 @@ export const TrainingScreen: React.FC = () => {
                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                <div className="uppercase tracking-wider text-[10px]">Día {day.weekday}</div>
-                <div className="font-semibold text-sm text-white mt-0.5">{day.title}</div>
+                <div className="uppercase tracking-wider text-[10px]">
+                  {viewMode === 'military' ? `Día ${idx + 1}` : `Día ${day.weekday}`}
+                </div>
+                <div className="font-semibold text-xs text-white mt-0.5 truncate max-w-[140px]">
+                  {viewMode === 'military' ? day.title.replace(/^Día \d+:\s*/, '') : day.title}
+                </div>
               </button>
             ))}
           </div>

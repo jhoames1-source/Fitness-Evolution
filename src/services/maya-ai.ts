@@ -153,6 +153,30 @@ ${context.sleepHoursToday ? `- Registro de sueño: ${context.sleepHoursToday} ho
       `Una deshidratación de apenas 2% reduce tu fuerza muscular en más de un 10%. Bebe un vaso de agua ahora para mantener la conductividad celular y la recuperación metabólica.`;
   }
 
+  // 5. Suplementación deportiva (Base científica extraída de Gym Total)
+  if (query.includes('creatina') || query.includes('suplement') || query.includes('whey') || query.includes('bcaa') || query.includes('cafeina') || query.includes('magnesio')) {
+    if (query.includes('creatina')) {
+      const recGrams = (context.weightKg * 0.05).toFixed(1);
+      return `Protocolo de Creatina Monohidratada para Operador ${context.userName}:\n` +
+        `- **Dosis clínica:** Para tus ${context.weightKg} kg, la dosis óptima diaria es de **${recGrams}g** (o una medida estándar de 5g).\n` +
+        `- **Timing:** Tómala a diario de forma constante, preferiblemente post-entreno con tus carbohidratos o proteína.\n` +
+        `- **Efecto:** Saturación progresiva de fosfocreatina muscular; optimiza la fuerza en esfuerzos de alta intensidad (series de 1 a 6 reps y calistenia pesada). No requiere fase de carga forzosa.`;
+    }
+    if (query.includes('whey') || query.includes('proteina')) {
+      return `Recomendación de Proteína de Suero (Whey Isolate / Concentrate):\n` +
+        `- Úsala como herramienta de conveniencia para alcanzar tu meta de **${context.dailyProteinTarget}g** si no logras completarla con comida sólida.\n` +
+        `- Un scoop estándar (30g) te aporta ~24-27g de proteína de alto valor biológico (PDCAAS 1.0) con más de 2.7g de leucina para encender la síntesis proteica (vía mTOR).`;
+    }
+    if (query.includes('magnesio')) {
+      return `Protocolo de Magnesio para Recuperación del SNC:\n` +
+        `- Toma **200 a 400 mg de Bisglicinato de Magnesio** 45 minutos antes de dormir.\n` +
+        `- Facilita el paso al sueño de ondas lentas (fase delta), reduce el tono simpático y previene calambres musculares nocturnos.`;
+    }
+    return `Reporte de Suplementación Táctica:\n` +
+      `Los suplementos con nivel de evidencia A comprobada (ISSN) son: **Creatina Monohidratada**, **Proteína Whey**, **Cafeína Anhidra**, **Beta-Alanina** y **Omega 3**.\n` +
+      `Consulta en la pestaña 'Ejercicios' > 'Suplementos A-Z' para ver la ficha clínica completa de cada compuesto.`;
+  }
+
   // Respuesta táctica general
   return `Aquí Maya, ${context.userName}. Recibido el reporte. Estamos monitoreando tu protocolo **${context.currentRoutineTitle}** y tu meta de **${context.dailyKcalTarget} kcal**.\n\n` +
     `Estoy lista para asistirte en técnica de ejercicios, ajustes de carga, opciones de comida o manejo de descansos. ¿Cuál es tu consulta operativa?`;
